@@ -23,10 +23,16 @@ export interface TodayPuzzleResponse {
 
 /**
  * Fetches today's puzzle via the secure RPC function.
+ * Passes the user's LOCAL date to avoid UTC timezone issues.
  * Returns null if no puzzle is scheduled for today.
  */
 export async function fetchTodayPuzzle(): Promise<TodayPuzzleResponse | null> {
-  const { data, error } = await supabase.rpc('get_today_puzzle');
+  // Compute the user's local date string (YYYY-MM-DD) to avoid UTC mismatch
+  const now = new Date();
+  const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000))
+    .toISOString().split('T')[0];
+
+  const { data, error } = await supabase.rpc('get_today_puzzle', { target_date: localDate });
 
   if (error) {
     console.error('Error fetching today\'s puzzle:', error);
