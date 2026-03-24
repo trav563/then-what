@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { fetchAllPuzzlesMapped, upsertPuzzleMapped, fetchSchedule, upsertScheduleEntry, deleteScheduleEntry } from '../services/supabase';
+import { fetchAllPuzzlesMapped, upsertPuzzleMapped, fetchSchedule, upsertScheduleEntry, deleteScheduleEntry, supabase } from '../services/supabase';
 import { checkAndRunAutomation } from '../services/automation';
 import { PuzzleRecord, PuzzleStatus } from '../types';
 import { X, Calendar, BarChart3, Database, Check, Edit2, Trash2, Play, Plus, Settings, AlertTriangle, AlertCircle, Loader2 } from 'lucide-react';
@@ -13,7 +13,7 @@ interface AdminDashboardProps {
 }
 
 export function AdminDashboard({ onClose, onPreviewPuzzle }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'puzzles' | 'schedule' | 'batches' | 'automation'>('puzzles');
+  const [activeTab, setActiveTab] = useState<'puzzles' | 'schedule' | 'batches' | 'automation' | 'analytics'>('puzzles');
   
   useEffect(() => {
     // Check automation triggers when admin dashboard loads
@@ -35,6 +35,7 @@ export function AdminDashboard({ onClose, onPreviewPuzzle }: AdminDashboardProps
             <TabButton active={activeTab === 'batches'} onClick={() => setActiveTab('batches')} icon={<Plus className="w-4 h-4" />} label="Batches" />
             <TabButton active={activeTab === 'automation'} onClick={() => setActiveTab('automation')} icon={<Settings className="w-4 h-4" />} label="Auto" />
             <TabButton active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} icon={<Calendar className="w-4 h-4" />} label="Schedule" />
+            <TabButton active={activeTab === 'analytics'} onClick={() => setActiveTab('analytics')} icon={<BarChart3 className="w-4 h-4" />} label="Stats" />
           </div>
         </div>
         
@@ -43,6 +44,7 @@ export function AdminDashboard({ onClose, onPreviewPuzzle }: AdminDashboardProps
           {activeTab === 'batches' && <BatchesView onPreviewPuzzle={onPreviewPuzzle} />}
           {activeTab === 'automation' && <AutomationView onPreviewPuzzle={onPreviewPuzzle} />}
           {activeTab === 'schedule' && <ScheduleView />}
+          {activeTab === 'analytics' && <AnalyticsView />}
         </div>
       </div>
     </div>
@@ -589,38 +591,58 @@ function ScheduleView() {
 function AnalyticsView() {
   const [events, setEvents] = useState<any[]>([]);
   const [puzzles, setPuzzles] = useState<PuzzleRecord[]>([]);
-  const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('all');
-  const [showRawLogs, setShowRawLogs] = useState(false);
+  const [timeFilter, setTimeFilter] = useState<'all' | '7d' | '30d'>('30d');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Analytics events are still local-only (per-device)
-    const stored = localStorage.getItem('then-what-db-analytics');
-    setEvents(stored ? JSON.parse(stored) : []);
-    fetchAllPuzzlesMapped().then(p => setPuzzles(p as PuzzleRecord[]));
+    const load = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('analytics_events')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10000);
+      if (!error && data) setEvents(data);
+      const p = await fetchAllPuzzlesMapped();
+      setPuzzles(p as PuzzleRecord[]);
+      setLoading(false);
+    };
+    load();
   }, []);
 
-  // Filter events by time
   const filteredEvents = useMemo(() => {
     if (timeFilter === 'all') return events;
     const now = Date.now();
     const msPerDay = 24 * 60 * 60 * 1000;
     const cutoff = now - (timeFilter === '7d' ? 7 * msPerDay : 30 * msPerDay);
-    return events.filter(e => e.timestamp >= cutoff);
+    return events.filter(e => new Date(e.created_at).getTime() >= cutoff);
   }, [events, timeFilter]);
 
-  // Compute top-level metrics
-  const loads = filteredEvents.filter(e => e.type === 'puzzle_loaded').length;
-  const starts = filteredEvents.filter(e => e.type === 'puzzle_started').length;
-  const solves = filteredEvents.filter(e => e.type === 'puzzle_solved').length;
-  const fails = filteredEvents.filter(e => e.type === 'puzzle_failed').length;
+  // Core counts
+  const loads = filteredEvents.filter(e => e.event_type === 'puzzle_loaded').length;
+  const starts = filteredEvents.filter(e => e.event_type === 'puzzle_started').length;
+  const solves = filteredEvents.filter(e => e.event_type === 'puzzle_solved').length;
+  const fails = filteredEvents.filter(e => e.event_type === 'puzzle_failed').length;
   const completedRuns = solves + fails;
-  
   const solveRate = completedRuns > 0 ? (solves / completedRuns) * 100 : 0;
   const failRate = completedRuns > 0 ? (fails / completedRuns) * 100 : 0;
-  const rawDropOffRate = loads > 0 ? ((loads - starts) / loads) * 100 : 0;
-  const dropOffRate = Math.max(0, rawDropOffRate);
+  const dropOffRate = loads > 0 ? Math.max(0, ((loads - starts) / loads) * 100) : 0;
 
-  const solveEvents = filteredEvents.filter(e => e.type === 'puzzle_solved');
+  // Unique users (unique session_ids)
+  const uniqueSessions = new Set(filteredEvents.map(e => e.session_id)).size;
+  // Returning users = users who played on more than one day
+  const sessionDays = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    filteredEvents.forEach(e => {
+      if (!map.has(e.session_id)) map.set(e.session_id, new Set());
+      map.get(e.session_id)!.add(e.event_date);
+    });
+    return map;
+  }, [filteredEvents]);
+  const returningUsers = Array.from(sessionDays.values()).filter((days: Set<string>) => days.size > 1).length;
+
+  // Avg attempts on solved puzzles
+  const solveEvents = filteredEvents.filter(e => e.event_type === 'puzzle_solved');
   const totalAttemptsOnSolves = solveEvents.reduce((sum, e) => sum + (e.data?.attempts || 0), 0);
   const avgAttempts = solves > 0 ? totalAttemptsOnSolves / solves : 0;
 
@@ -633,162 +655,114 @@ function AnalyticsView() {
     else if (att === 3) attemptDist[3]++;
   });
 
-  // Puzzle-level performance
+  // Daily activity
+  const dailyStats = useMemo(() => {
+    const stats: Record<string, { date: string; sessions: Set<string>; starts: number; solves: number; fails: number }> = {};
+    filteredEvents.forEach(e => {
+      const d = e.event_date;
+      if (!stats[d]) stats[d] = { date: d, sessions: new Set(), starts: 0, solves: 0, fails: 0 };
+      stats[d].sessions.add(e.session_id);
+      if (e.event_type === 'puzzle_started') stats[d].starts++;
+      if (e.event_type === 'puzzle_solved') stats[d].solves++;
+      if (e.event_type === 'puzzle_failed') stats[d].fails++;
+    });
+    return Object.values(stats)
+      .map(s => ({ ...s, users: s.sessions.size }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [filteredEvents]);
+
+  // Puzzle performance
   const puzzleStats = useMemo(() => {
     const stats: Record<string, any> = {};
     filteredEvents.forEach(e => {
-      if (!stats[e.puzzleId]) {
-        stats[e.puzzleId] = { id: e.puzzleId, loads: 0, starts: 0, solves: 0, fails: 0, totalAttempts: 0, lastPlayed: 0 };
+      if (!stats[e.puzzle_id]) {
+        stats[e.puzzle_id] = { id: e.puzzle_id, loads: 0, starts: 0, solves: 0, fails: 0, totalAttempts: 0, sessions: new Set(), lastPlayed: '' };
       }
-      const s = stats[e.puzzleId];
-      if (e.type === 'puzzle_loaded') s.loads++;
-      if (e.type === 'puzzle_started') s.starts++;
-      if (e.type === 'puzzle_solved') {
-        s.solves++;
-        s.totalAttempts += (e.data?.attempts || 0);
-      }
-      if (e.type === 'puzzle_failed') s.fails++;
-      if (e.timestamp > s.lastPlayed) s.lastPlayed = e.timestamp;
+      const s = stats[e.puzzle_id];
+      s.sessions.add(e.session_id);
+      if (e.event_type === 'puzzle_loaded') s.loads++;
+      if (e.event_type === 'puzzle_started') s.starts++;
+      if (e.event_type === 'puzzle_solved') { s.solves++; s.totalAttempts += (e.data?.attempts || 0); }
+      if (e.event_type === 'puzzle_failed') s.fails++;
+      if (e.event_date > s.lastPlayed) s.lastPlayed = e.event_date;
     });
-
     return Object.values(stats).map(s => {
       const p = puzzles.find(p => p.id === s.id);
       const completed = s.solves + s.fails;
       return {
         ...s,
-        title: p?.title || 'Unknown',
-        status: p?.status || 'missing',
+        title: p?.title || s.id,
+        status: p?.status || 'unknown',
+        users: s.sessions.size,
         solveRate: completed > 0 ? (s.solves / completed) * 100 : 0,
         avgAttempts: s.solves > 0 ? s.totalAttempts / s.solves : 0
       };
-    }).sort((a, b) => b.lastPlayed - a.lastPlayed);
+    }).sort((a, b) => b.lastPlayed.localeCompare(a.lastPlayed));
   }, [filteredEvents, puzzles]);
 
-  // Time-based summaries (by day)
-  const dailyStats = useMemo(() => {
-    const stats: Record<string, any> = {};
-    filteredEvents.forEach(e => {
-      const eventDate = new Date(e.timestamp);
-      const localDateStr = new Date(eventDate.getTime() - (eventDate.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-      
-      if (!stats[localDateStr]) {
-        stats[localDateStr] = { date: localDateStr, starts: 0, solves: 0, fails: 0 };
-      }
-      if (e.type === 'puzzle_started') stats[localDateStr].starts++;
-      if (e.type === 'puzzle_solved') stats[localDateStr].solves++;
-      if (e.type === 'puzzle_failed') stats[localDateStr].fails++;
-    });
-    return Object.values(stats).sort((a, b) => b.date.localeCompare(a.date));
-  }, [filteredEvents]);
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-slate-50">
-      
-      {/* Local-Only Notice */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3 items-start">
-        <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-        <div>
-          <h3 className="text-sm font-bold text-blue-900">Local Device Analytics Only</h3>
-          <p className="text-sm text-blue-800 mt-1">
-            These metrics are derived exclusively from events recorded on this local device. This is a prototype environment and does not reflect multi-user production data.
-          </p>
-        </div>
-      </div>
-
+    <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-slate-50">
       {/* Filters */}
       <div className="flex gap-2">
-        <button onClick={() => setTimeFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${timeFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>All Time</button>
         <button onClick={() => setTimeFilter('30d')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${timeFilter === '30d' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>Last 30 Days</button>
         <button onClick={() => setTimeFilter('7d')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${timeFilter === '7d' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>Last 7 Days</button>
+        <button onClick={() => setTimeFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${timeFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}>All Time</button>
       </div>
 
       {/* Top-Level KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KPICard label="Unique Users" value={uniqueSessions} subtitle="Unique sessions" color="text-indigo-600" />
+        <KPICard label="Returning Users" value={returningUsers} subtitle="Played on 2+ days" color="text-purple-600" />
+        <KPICard label="Total Plays" value={completedRuns} subtitle="Solved + Failed" color="text-slate-800" />
+        <KPICard label="Solve Rate" value={`${solveRate.toFixed(1)}%`} subtitle="Of completed runs" color="text-emerald-600" />
+        <KPICard label="Avg Attempts" value={avgAttempts.toFixed(1)} subtitle="On solved puzzles" color="text-indigo-600" />
+        <KPICard label="Drop-off Rate" value={`${dropOffRate.toFixed(1)}%`} subtitle="Loaded but never started" color="text-amber-600" />
+        <KPICard label="Wins / Losses" value={`${solves} / ${fails}`} subtitle="Absolute counts" color="text-slate-800" />
+        <KPICard label="Fail Rate" value={`${failRate.toFixed(1)}%`} subtitle="Of completed runs" color="text-red-600" />
+      </div>
+
+      {/* Engagement Funnel */}
       <div>
-        <h2 className="text-lg font-bold text-slate-800 mb-4">Key Performance Indicators</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Puzzle Loads</div>
-            <div className="text-2xl font-black text-slate-800">{loads}</div>
-            <div className="text-xs text-slate-400 mt-1">App opened to a puzzle</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Puzzle Starts</div>
-            <div className="text-2xl font-black text-slate-800">{starts}</div>
-            <div className="text-xs text-slate-400 mt-1">First move made</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Completed Runs</div>
-            <div className="text-2xl font-black text-slate-800">{completedRuns}</div>
-            <div className="text-xs text-slate-400 mt-1">Solved + Failed</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Drop-off Rate</div>
-            <div className="text-2xl font-black text-amber-600">{dropOffRate.toFixed(1)}%</div>
-            <div className="text-xs text-slate-400 mt-1">Loaded but not started</div>
-          </div>
-          
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Solve Rate</div>
-            <div className="text-2xl font-black text-emerald-600">{solveRate.toFixed(1)}%</div>
-            <div className="text-xs text-slate-400 mt-1">Of completed runs</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Fail Rate</div>
-            <div className="text-2xl font-black text-red-600">{failRate.toFixed(1)}%</div>
-            <div className="text-xs text-slate-400 mt-1">Of completed runs</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Avg Attempts</div>
-            <div className="text-2xl font-black text-indigo-600">{avgAttempts.toFixed(2)}</div>
-            <div className="text-xs text-slate-400 mt-1">On successful solves</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Wins / Losses</div>
-            <div className="text-2xl font-black text-slate-800">{solves} / {fails}</div>
-            <div className="text-xs text-slate-400 mt-1">Absolute counts</div>
-          </div>
+        <h2 className="text-base font-bold text-slate-800 mb-3">Engagement Funnel</h2>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+          <FunnelBar label="Loaded" value={loads} max={loads} color="bg-slate-400" />
+          <FunnelBar label="Started" value={starts} max={loads} color="bg-indigo-500" />
+          <FunnelBar label="Solved" value={solves} max={loads} color="bg-emerald-500" />
+          <FunnelBar label="Failed" value={fails} max={loads} color="bg-red-500" />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Attempt Distribution */}
         <div className="lg:col-span-1">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Attempt Distribution</h2>
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-bold text-emerald-700">Solved on Attempt 1</span>
-                <span className="font-bold text-slate-700">{attemptDist[1]}</span>
+          <h2 className="text-base font-bold text-slate-800 mb-3">Attempt Distribution</h2>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+            {[1, 2, 3].map(n => (
+              <div key={n}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-bold text-emerald-700">Attempt {n}</span>
+                  <span className="font-bold text-slate-700">{attemptDist[n as 1|2|3]}</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2">
+                  <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${completedRuns > 0 ? (attemptDist[n as 1|2|3] / completedRuns) * 100 : 0}%`, opacity: 1 - (n - 1) * 0.2 }} />
+                </div>
               </div>
-              <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${completedRuns > 0 ? (attemptDist[1] / completedRuns) * 100 : 0}%` }}></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-bold text-emerald-600">Solved on Attempt 2</span>
-                <span className="font-bold text-slate-700">{attemptDist[2]}</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-emerald-400 h-2 rounded-full" style={{ width: `${completedRuns > 0 ? (attemptDist[2] / completedRuns) * 100 : 0}%` }}></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-bold text-emerald-500">Solved on Attempt 3</span>
-                <span className="font-bold text-slate-700">{attemptDist[3]}</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-emerald-300 h-2 rounded-full" style={{ width: `${completedRuns > 0 ? (attemptDist[3] / completedRuns) * 100 : 0}%` }}></div>
-              </div>
-            </div>
+            ))}
             <div className="pt-2 border-t border-slate-100">
               <div className="flex justify-between text-sm mb-1">
-                <span className="font-bold text-red-600">Failed (Out of attempts)</span>
+                <span className="font-bold text-red-600">Failed</span>
                 <span className="font-bold text-slate-700">{attemptDist.failed}</span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-red-500 h-2 rounded-full" style={{ width: `${completedRuns > 0 ? (attemptDist.failed / completedRuns) * 100 : 0}%` }}></div>
+                <div className="bg-red-500 h-2 rounded-full" style={{ width: `${completedRuns > 0 ? (attemptDist.failed / completedRuns) * 100 : 0}%` }} />
               </div>
             </div>
           </div>
@@ -796,21 +770,23 @@ function AnalyticsView() {
 
         {/* Daily Activity */}
         <div className="lg:col-span-2">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Daily Activity</h2>
+          <h2 className="text-base font-bold text-slate-800 mb-3">Daily Activity</h2>
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-500 font-medium">
                 <tr>
                   <th className="p-3 border-b border-slate-200">Date</th>
+                  <th className="p-3 border-b border-slate-200 text-right">Users</th>
                   <th className="p-3 border-b border-slate-200 text-right">Starts</th>
                   <th className="p-3 border-b border-slate-200 text-right">Solves</th>
                   <th className="p-3 border-b border-slate-200 text-right">Fails</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {dailyStats.slice(0, 7).map(stat => (
+                {dailyStats.slice(0, 14).map(stat => (
                   <tr key={stat.date} className="hover:bg-slate-50">
                     <td className="p-3 font-medium text-slate-800">{stat.date}</td>
+                    <td className="p-3 text-right text-indigo-600 font-medium">{stat.users}</td>
                     <td className="p-3 text-right text-slate-600">{stat.starts}</td>
                     <td className="p-3 text-right text-emerald-600 font-medium">{stat.solves}</td>
                     <td className="p-3 text-right text-red-600 font-medium">{stat.fails}</td>
@@ -818,7 +794,7 @@ function AnalyticsView() {
                 ))}
                 {dailyStats.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-6 text-center text-slate-500">No daily activity recorded.</td>
+                    <td colSpan={5} className="p-6 text-center text-slate-500">No activity data yet. Play a puzzle to generate events!</td>
                   </tr>
                 )}
               </tbody>
@@ -829,18 +805,16 @@ function AnalyticsView() {
 
       {/* Puzzle Performance */}
       <div>
-        <h2 className="text-lg font-bold text-slate-800 mb-4">Puzzle Performance</h2>
+        <h2 className="text-base font-bold text-slate-800 mb-3">Puzzle Performance</h2>
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500 font-medium">
               <tr>
                 <th className="p-3 border-b border-slate-200">Puzzle</th>
-                <th className="p-3 border-b border-slate-200">Status</th>
-                <th className="p-3 border-b border-slate-200 text-right">Loads</th>
-                <th className="p-3 border-b border-slate-200 text-right">Starts</th>
+                <th className="p-3 border-b border-slate-200 text-right">Users</th>
                 <th className="p-3 border-b border-slate-200 text-right">Solves</th>
                 <th className="p-3 border-b border-slate-200 text-right">Fails</th>
-                <th className="p-3 border-b border-slate-200 text-right">Solve Rate</th>
+                <th className="p-3 border-b border-slate-200 text-right">Solve %</th>
                 <th className="p-3 border-b border-slate-200 text-right">Avg Att.</th>
                 <th className="p-3 border-b border-slate-200 text-right">Last Played</th>
               </tr>
@@ -850,79 +824,49 @@ function AnalyticsView() {
                 <tr key={stat.id} className="hover:bg-slate-50">
                   <td className="p-3">
                     <div className="font-bold text-slate-800 truncate max-w-[200px]">{stat.title}</div>
-                    <div className="text-[10px] font-mono text-slate-400">{stat.id}</div>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getStatusColor(stat.status)}`}>{stat.status}</span>
                   </td>
-                  <td className="p-3">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getStatusColor(stat.status)}`}>
-                      {stat.status}
-                    </span>
-                  </td>
-                  <td className="p-3 text-right text-slate-600">{stat.loads}</td>
-                  <td className="p-3 text-right text-slate-600">{stat.starts}</td>
+                  <td className="p-3 text-right text-indigo-600 font-medium">{stat.users}</td>
                   <td className="p-3 text-right text-emerald-600 font-medium">{stat.solves}</td>
                   <td className="p-3 text-right text-red-600 font-medium">{stat.fails}</td>
-                  <td className="p-3 text-right font-bold text-slate-700">{stat.solveRate.toFixed(1)}%</td>
-                  <td className="p-3 text-right text-indigo-600 font-medium">{stat.avgAttempts.toFixed(2)}</td>
-                  <td className="p-3 text-right text-slate-500 whitespace-nowrap">{new Date(stat.lastPlayed).toLocaleDateString()}</td>
+                  <td className="p-3 text-right font-bold text-slate-700">{stat.solveRate.toFixed(0)}%</td>
+                  <td className="p-3 text-right text-indigo-600 font-medium">{stat.avgAttempts.toFixed(1)}</td>
+                  <td className="p-3 text-right text-slate-500 whitespace-nowrap">{stat.lastPlayed}</td>
                 </tr>
               ))}
               {puzzleStats.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500">No puzzle performance data available.</td>
+                  <td colSpan={7} className="p-8 text-center text-slate-500">No puzzle performance data yet.</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Raw Logs Toggle */}
-      <div>
-        <button 
-          onClick={() => setShowRawLogs(!showRawLogs)}
-          className="text-sm font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-        >
-          {showRawLogs ? 'Hide Raw Event Logs' : 'View Raw Event Logs'}
-        </button>
-        
-        {showRawLogs && (
-          <div className="mt-4 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <h3 className="font-bold text-slate-700">Raw Event Logs</h3>
-              <span className="text-xs text-slate-500">Showing last 50 events</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-500 font-medium">
-                  <tr>
-                    <th className="p-3 border-b border-slate-200">Time</th>
-                    <th className="p-3 border-b border-slate-200">Type</th>
-                    <th className="p-3 border-b border-slate-200">Puzzle ID</th>
-                    <th className="p-3 border-b border-slate-200">Data</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredEvents.slice().reverse().slice(0, 50).map(event => (
-                    <tr key={event.id} className="hover:bg-slate-50">
-                      <td className="p-3 text-slate-500 whitespace-nowrap">{new Date(event.timestamp).toLocaleString()}</td>
-                      <td className="p-3 font-medium text-slate-800">
-                        <span className="bg-slate-100 px-2 py-1 rounded text-xs">{event.type}</span>
-                      </td>
-                      <td className="p-3 font-mono text-slate-500 text-xs">{event.puzzleId}</td>
-                      <td className="p-3 text-slate-500 font-mono text-xs truncate max-w-xs">{JSON.stringify(event.data || {})}</td>
-                    </tr>
-                  ))}
-                  {filteredEvents.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="p-8 text-center text-slate-500">No events found in this time range.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+function KPICard({ label, value, subtitle, color }: { label: string; value: string | number; subtitle: string; color: string }) {
+  return (
+    <div className="bg-white p-3 md:p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{label}</div>
+      <div className={`text-xl md:text-2xl font-black ${color}`}>{value}</div>
+      <div className="text-[10px] text-slate-400 mt-1">{subtitle}</div>
+    </div>
+  );
+}
+
+function FunnelBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const pct = max > 0 ? (value / max) * 100 : 0;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-sm font-medium text-slate-700 w-16 shrink-0">{label}</span>
+      <div className="flex-1 bg-slate-100 rounded-full h-4 relative overflow-hidden">
+        <div className={`${color} h-4 rounded-full transition-all`} style={{ width: `${pct}%` }} />
       </div>
+      <span className="text-sm font-bold text-slate-700 w-12 text-right">{value}</span>
+      <span className="text-xs text-slate-400 w-12 text-right">{pct.toFixed(0)}%</span>
     </div>
   );
 }

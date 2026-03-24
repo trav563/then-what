@@ -1,26 +1,37 @@
-import { AnalyticsEvent } from '../types';
+import { supabase } from './supabase';
 
-const DB_KEY_ANALYTICS = 'then-what-db-analytics';
+// Generate a persistent session ID per browser tab
+const SESSION_ID = crypto.randomUUID();
 
-export function getAnalytics(): AnalyticsEvent[] {
-  const data = localStorage.getItem(DB_KEY_ANALYTICS);
-  return data ? JSON.parse(data) : [];
-}
+type EventType = 'puzzle_loaded' | 'puzzle_started' | 'attempt_submitted' |
+  'puzzle_solved' | 'puzzle_failed' | 'results_shared' |
+  'streak_continued' | 'streak_broken';
 
+/**
+ * Track an analytics event in Supabase.
+ * Fire-and-forget — never blocks the game.
+ */
 export function trackEvent(
-  type: AnalyticsEvent['type'],
+  type: EventType,
   puzzleId: string,
-  data?: any
+  data?: Record<string, unknown>
 ) {
-  const events = getAnalytics();
-  const event: AnalyticsEvent = {
-    id: crypto.randomUUID(),
-    type,
-    puzzleId,
-    date: new Date().toISOString().split('T')[0],
-    timestamp: Date.now(),
-    data,
-  };
-  events.push(event);
-  localStorage.setItem(DB_KEY_ANALYTICS, JSON.stringify(events));
+  // Compute local date string (avoids UTC mismatch)
+  const now = new Date();
+  const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000))
+    .toISOString().split('T')[0];
+
+  // Fire-and-forget insert
+  supabase
+    .from('analytics_events')
+    .insert({
+      event_type: type,
+      puzzle_id: puzzleId,
+      event_date: localDate,
+      session_id: SESSION_ID,
+      data: data ?? {},
+    })
+    .then(({ error }) => {
+      if (error) console.warn('Analytics insert failed:', error.message);
+    });
 }
