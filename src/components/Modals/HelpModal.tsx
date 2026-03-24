@@ -1,0 +1,59 @@
+import React from 'react';
+import { Modal } from './Modal';
+import { CheckCircle2, GripVertical } from 'lucide-react';
+
+interface HelpModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function HelpModal({ isOpen, onClose }: HelpModalProps) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="How to Play">
+      <div className="flex flex-col gap-6 text-slate-700">
+        <p className="text-[15px] leading-relaxed font-medium">
+          Put the 6 cards in the correct order. You get <strong className="text-slate-900">3 attempts</strong>.
+        </p>
+
+        <div className="flex flex-col gap-5">
+          <div className="flex gap-4 items-start">
+            <div className="mt-0.5 flex-shrink-0 w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center">
+              <GripVertical className="w-4 h-4 text-slate-500" />
+            </div>
+            <div>
+              <p className="font-bold text-slate-900 mb-0.5">Drag and Drop</p>
+              <p className="text-[14px] text-slate-600 leading-snug">Drag the cards to change their order.</p>
+            </div>
+          </div>
+
+          <div className="flex gap-4 items-start">
+            <div className="mt-0.5 flex-shrink-0 w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="font-bold text-slate-900 mb-0.5">Locked Cards</p>
+              <p className="text-[14px] text-slate-600 leading-snug">After each guess, correct cards turn green and lock in place.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 mt-2">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Example</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+              <span className="text-[14px] font-medium text-emerald-900">1. You wake up late.</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+              <GripVertical className="w-5 h-5 text-slate-300 flex-shrink-0" />
+              <span className="text-[14px] font-medium text-slate-700">2. You rush to work.</span>
+            </div>
+          </div>
+          <p className="text-[13px] text-slate-500 mt-4 font-medium">
+            "You wake up late" is in the correct spot and cannot be moved.
+          </p>
+        </div>
+      </div>
+    </Modal>
+  );
+}
