@@ -13,7 +13,7 @@ interface AdminDashboardProps {
 }
 
 export function AdminDashboard({ onClose, onPreviewPuzzle }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'puzzles' | 'schedule' | 'analytics' | 'batches' | 'automation'>('puzzles');
+  const [activeTab, setActiveTab] = useState<'puzzles' | 'schedule' | 'batches' | 'automation'>('puzzles');
   
   useEffect(() => {
     // Check automation triggers when admin dashboard loads
@@ -21,22 +21,21 @@ export function AdminDashboard({ onClose, onPreviewPuzzle }: AdminDashboardProps
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 md:p-8">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-full flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
-          <div className="flex items-center gap-4">
-            <h2 className="font-bold text-lg text-slate-800">Admin Dashboard</h2>
-            <div className="flex gap-2">
-              <TabButton active={activeTab === 'puzzles'} onClick={() => setActiveTab('puzzles')} icon={<Database className="w-4 h-4" />} label="Puzzles" />
-              <TabButton active={activeTab === 'batches'} onClick={() => setActiveTab('batches')} icon={<Plus className="w-4 h-4" />} label="Batches" />
-              <TabButton active={activeTab === 'automation'} onClick={() => setActiveTab('automation')} icon={<Settings className="w-4 h-4" />} label="Automation" />
-              <TabButton active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} icon={<Calendar className="w-4 h-4" />} label="Schedule" />
-              <TabButton active={activeTab === 'analytics'} onClick={() => setActiveTab('analytics')} icon={<BarChart3 className="w-4 h-4" />} label="Analytics" />
-            </div>
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-0 md:p-8">
+      <div className="bg-white md:rounded-2xl shadow-2xl w-full h-full md:h-auto md:max-w-6xl md:max-h-full flex flex-col overflow-hidden">
+        <div className="border-b border-slate-100 bg-slate-50 shrink-0">
+          <div className="flex items-center justify-between px-3 pt-3 pb-2 md:px-4 md:pt-4">
+            <h2 className="font-bold text-base md:text-lg text-slate-800">Admin</h2>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="grid grid-cols-4 gap-1 px-2 pb-2 md:flex md:gap-1.5 md:px-4 md:pb-3">
+            <TabButton active={activeTab === 'puzzles'} onClick={() => setActiveTab('puzzles')} icon={<Database className="w-4 h-4" />} label="Puzzles" />
+            <TabButton active={activeTab === 'batches'} onClick={() => setActiveTab('batches')} icon={<Plus className="w-4 h-4" />} label="Batches" />
+            <TabButton active={activeTab === 'automation'} onClick={() => setActiveTab('automation')} icon={<Settings className="w-4 h-4" />} label="Auto" />
+            <TabButton active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} icon={<Calendar className="w-4 h-4" />} label="Schedule" />
+          </div>
         </div>
         
         <div className="flex-1 overflow-hidden flex flex-col bg-slate-50/50">
@@ -44,7 +43,6 @@ export function AdminDashboard({ onClose, onPreviewPuzzle }: AdminDashboardProps
           {activeTab === 'batches' && <BatchesView onPreviewPuzzle={onPreviewPuzzle} />}
           {activeTab === 'automation' && <AutomationView onPreviewPuzzle={onPreviewPuzzle} />}
           {activeTab === 'schedule' && <ScheduleView />}
-          {activeTab === 'analytics' && <AnalyticsView />}
         </div>
       </div>
     </div>
@@ -55,12 +53,12 @@ function TabButton({ active, onClick, icon, label }: { active: boolean, onClick:
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+      className={`flex flex-col md:flex-row items-center justify-center gap-0.5 md:gap-2 px-2 py-2 md:px-3 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors whitespace-nowrap ${
         active ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'
       }`}
     >
       {icon}
-      {label}
+      <span>{label}</span>
     </button>
   );
 }
@@ -183,92 +181,103 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
       <div className="flex-1 overflow-y-auto p-4">
         <div className="grid gap-4">
           {filteredPuzzles.map(puzzle => (
-            <div key={puzzle.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-center">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-mono text-slate-400">{puzzle.id}</span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getStatusColor(puzzle.status)}`}>
-                    {puzzle.status}
-                  </span>
-                  {puzzle.scheduledFor && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {puzzle.scheduledFor}
+            <div key={puzzle.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getStatusColor(puzzle.status)}`}>
+                      {puzzle.status}
                     </span>
-                  )}
+                    {puzzle.scheduledFor && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {puzzle.scheduledFor}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-bold text-slate-800">{puzzle.title}</h3>
+                  <p className="text-sm text-slate-500">{humanizeTheme(puzzle.theme)}</p>
                 </div>
-                <h3 className="font-bold text-slate-800">{puzzle.title}</h3>
-                <p className="text-sm text-slate-500">{humanizeTheme(puzzle.theme)}</p>
-                {puzzle.generationBatchId && (
-                  <p className="text-[10px] text-slate-400 mt-1">Batch: {puzzle.generationBatchId}</p>
-                )}
-                {puzzle.similarityWarning && (
-                  <div className="mt-1 flex items-start gap-1 text-amber-600 bg-amber-50 px-2 py-1 rounded text-xs">
-                    <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-                    <span>{puzzle.similarityWarning}</span>
+                
+                {puzzle.evaluation && (
+                  <div className="flex-1 text-sm bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-slate-700">AI:</span>
+                      <span className={`text-xs font-bold uppercase px-1.5 py-0.5 rounded ${
+                        puzzle.evaluation.recommendedDecision === 'approve' ? 'bg-emerald-100 text-emerald-700' :
+                        puzzle.evaluation.recommendedDecision === 'revise' ? 'bg-amber-100 text-amber-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>{puzzle.evaluation.recommendedDecision}</span>
+                      <span className="text-xs text-slate-500">({puzzle.evaluation.likelyDifficulty})</span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
+                      <span>Clarity: {puzzle.evaluation.clarity}/10</span>
+                      <span>Ending: {puzzle.evaluation.endingStrength}/10</span>
+                      <span>Ambiguity: {puzzle.evaluation.ambiguityRisk}/10</span>
+                    </div>
+                    {puzzle.evaluation.shortReason && (
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-2">{puzzle.evaluation.shortReason}</p>
+                    )}
                   </div>
                 )}
+                
+                <div className="flex flex-col gap-2 shrink-0">
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    <button onClick={() => onPreviewPuzzle(puzzle.id)} className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors" title="Preview">
+                      <Play className="w-4 h-4" />
+                    </button>
+                    {puzzle.status === 'ai_reviewed' && (
+                      <>
+                        <button onClick={() => handleStatusChange(puzzle.id, 'approved')} className="p-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors" title="Approve">
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleStatusChange(puzzle.id, 'rejected')} className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors" title="Reject">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                    {puzzle.status === 'approved' && (
+                      <>
+                        <button onClick={() => setSchedulingPuzzleId(schedulingPuzzleId === puzzle.id ? null : puzzle.id)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors" title="Schedule">
+                          <Calendar className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleStatusChange(puzzle.id, 'retired')} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors" title="Retire">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {schedulingPuzzleId === puzzle.id && (
+                    <div className="flex gap-2 items-center mt-2">
+                      <input 
+                        type="date" 
+                        min={new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]}
+                        value={scheduleDate}
+                        onChange={(e) => setScheduleDate(e.target.value)}
+                        className="text-sm border border-slate-200 rounded-lg p-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <button 
+                        onClick={() => handleSchedule(puzzle.id)}
+                        disabled={!scheduleDate}
+                        className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               
-              {puzzle.evaluation && (
-                <div className="flex-1 text-sm bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-bold text-slate-700">AI:</span>
-                    <span className={`text-xs font-bold uppercase px-1.5 py-0.5 rounded ${
-                      puzzle.evaluation.decision === 'approve' ? 'bg-emerald-100 text-emerald-700' :
-                      puzzle.evaluation.decision === 'revise' ? 'bg-amber-100 text-amber-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>{puzzle.evaluation.decision}</span>
-                    <span className="text-xs text-slate-500">({puzzle.evaluation.difficulty})</span>
-                  </div>
-                  <p className="text-xs text-slate-600 line-clamp-2" title={puzzle.evaluation.notes}>{puzzle.evaluation.notes}</p>
+              {/* Card Preview */}
+              <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1 text-xs text-slate-600">
+                  {puzzle.cards.map((card, idx) => (
+                    <div key={card.id} className="flex gap-1.5">
+                      <span className="text-slate-400 font-mono w-3 shrink-0">{idx + 1}.</span>
+                      <span className="truncate">{card.text}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-              
-              <div className="flex flex-col gap-2 shrink-0">
-                <div className="flex flex-wrap gap-2 justify-end">
-                  <button onClick={() => onPreviewPuzzle(puzzle.id)} className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors" title="Preview">
-                    <Play className="w-4 h-4" />
-                  </button>
-                  {puzzle.status === 'ai_reviewed' && (
-                    <>
-                      <button onClick={() => handleStatusChange(puzzle.id, 'approved')} className="p-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors" title="Approve">
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => handleStatusChange(puzzle.id, 'rejected')} className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors" title="Reject">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
-                  {puzzle.status === 'approved' && (
-                    <>
-                      <button onClick={() => setSchedulingPuzzleId(schedulingPuzzleId === puzzle.id ? null : puzzle.id)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors" title="Schedule">
-                        <Calendar className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => handleStatusChange(puzzle.id, 'retired')} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors" title="Retire">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
-                </div>
-                {schedulingPuzzleId === puzzle.id && (
-                  <div className="flex gap-2 items-center mt-2">
-                    <input 
-                      type="date" 
-                      min={new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0]}
-                      value={scheduleDate}
-                      onChange={(e) => setScheduleDate(e.target.value)}
-                      className="text-sm border border-slate-200 rounded-lg p-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <button 
-                      onClick={() => handleSchedule(puzzle.id)}
-                      disabled={!scheduleDate}
-                      className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      Save
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           ))}
@@ -412,27 +421,40 @@ function ScheduleView() {
   };
 
   const handleAutoFill = async (daysToFill: number) => {
-    const approvedPuzzles = puzzles.filter(p => p.status === 'approved' && !p.scheduledFor);
+    // Only use approved puzzles that have NEVER been scheduled or published
+    const scheduledIds = new Set(Object.values(schedule));
+    const approvedPuzzles = puzzles.filter(p => 
+      p.status === 'approved' && 
+      !p.scheduledFor && 
+      !p.publishedAt && 
+      !scheduledIds.has(p.id)
+    );
     if (approvedPuzzles.length === 0) {
-      alert('No approved puzzles available to schedule.');
+      alert('No approved puzzles available to schedule. Generate and approve more puzzles first.');
       return;
     }
     
     const newSchedule = { ...schedule };
     let filledCount = 0;
     let currentDate = new Date(today.getTime() - (today.getTimezoneOffset() * 60000));
+    const usedPuzzleIds = new Set(Object.values(newSchedule));
     
     while (filledCount < daysToFill && approvedPuzzles.length > 0) {
       const dateStr = currentDate.toISOString().split('T')[0];
       
       if (!newSchedule[dateStr]) {
         const puzzleToSchedule = approvedPuzzles.shift()!;
-        newSchedule[dateStr] = puzzleToSchedule.id;
         
-        await upsertScheduleEntry(dateStr, puzzleToSchedule.id);
-        await upsertPuzzleMapped({ ...puzzleToSchedule, status: 'scheduled' as const, scheduledFor: dateStr });
-        
-        filledCount++;
+        // Double-check this puzzle isn't already used on another date
+        if (!usedPuzzleIds.has(puzzleToSchedule.id)) {
+          newSchedule[dateStr] = puzzleToSchedule.id;
+          usedPuzzleIds.add(puzzleToSchedule.id);
+          
+          await upsertScheduleEntry(dateStr, puzzleToSchedule.id);
+          await upsertPuzzleMapped({ ...puzzleToSchedule, status: 'scheduled' as const, scheduledFor: dateStr });
+          
+          filledCount++;
+        }
       }
       
       currentDate.setDate(currentDate.getDate() + 1);

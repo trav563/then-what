@@ -111,14 +111,14 @@ export function AutomationView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: stri
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col md:flex-row h-full overflow-hidden">
       {/* Sidebar: Settings */}
-      <div className="w-80 border-r border-slate-200 bg-white flex flex-col h-full overflow-y-auto shrink-0 p-4">
-        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-slate-200 bg-white flex flex-col shrink-0 max-h-[50vh] md:max-h-full md:h-full overflow-y-auto p-3 md:p-4">
+        <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
           <Settings className="w-4 h-4" /> Automation Settings
         </h3>
         
-        <div className="space-y-4">
+        <div className="space-y-3">
           <label className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
             <input
               type="checkbox"
@@ -190,12 +190,12 @@ export function AutomationView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: stri
           <button
             onClick={handleRunNow}
             disabled={isGenerating}
-            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 mt-4"
+            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"
           >
             {isGenerating ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Running...</>
             ) : (
-              <><Play className="w-4 h-4" /> Run Recommended Auto-Generation Now</>
+              <><Play className="w-4 h-4" /> Run Auto-Generation Now</>
             )}
           </button>
           
@@ -208,7 +208,7 @@ export function AutomationView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: stri
       </div>
 
       {/* Main Content: Health & Candidates */}
-      <div className="flex-1 overflow-y-auto bg-slate-50 p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-6 space-y-6">
         
         {/* System Status */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">

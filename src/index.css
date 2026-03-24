@@ -9,3 +9,12 @@ body {
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Hide scrollbar while keeping scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

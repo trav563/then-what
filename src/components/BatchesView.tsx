@@ -118,13 +118,13 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
   const selectedBatch = batches.find(b => b.id === selectedBatchId);
 
   return (
-    <div className="flex h-full">
-      {/* Sidebar: Batch List & Generator */}
-      <div className="w-80 border-r border-slate-200 bg-white flex flex-col h-full overflow-hidden shrink-0">
-        <div className="p-4 border-b border-slate-100 bg-slate-50">
-          <h3 className="font-bold text-slate-800 mb-4">Generate New Batch</h3>
+    <div className="flex flex-col md:flex-row h-full overflow-hidden">
+      {/* Sidebar: Batch List & Generator — scrolls on mobile */}
+      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-slate-200 bg-white flex flex-col shrink-0 max-h-[50vh] md:max-h-full md:h-full overflow-hidden">
+        <div className="p-3 md:p-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="font-bold text-slate-800 mb-3">Generate New Batch</h3>
           
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Count</label>
               <select 
@@ -229,7 +229,7 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
       </div>
 
       {/* Main Content: Batch Details */}
-      <div className="flex-1 overflow-y-auto bg-slate-50 p-6">
+      <div className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-6">
         {selectedBatch ? (
           <BatchDetail batch={selectedBatch} onPreviewPuzzle={onPreviewPuzzle} />
         ) : (
