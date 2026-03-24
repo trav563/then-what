@@ -149,6 +149,7 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit }: GameBoardP
                     id={id} 
                     text={card.text} 
                     isLocked={false} 
+                    isYellow={gameState.cardStatuses?.[id] === 'yellow'}
                     isDragging={activeId === id}
                   />
                 </motion.div>
@@ -162,6 +163,7 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit }: GameBoardP
               id={activeCard.id} 
               text={activeCard.text} 
               isLocked={false} 
+              isYellow={gameState.cardStatuses?.[activeCard.id] === 'yellow'}
               isDragging={true}
               isOverlay={true}
             />

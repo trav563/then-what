@@ -86,7 +86,11 @@ export function ResultModal({
     let shareText = `THEN WHAT? #${puzzle.number}\n`;
     
     (gameState.history || []).forEach((attempt) => {
-      shareText += attempt.map((isCorrect) => (isCorrect ? '🟩' : '⬜')).join('') + '\n';
+      shareText += attempt.map((status) => {
+        if (status === true || status === 'green') return '🟩';
+        if (status === 'yellow') return '🟨';
+        return '⬜';
+      }).join('') + '\n';
     });
     
     shareText += `${attemptsStr}/${gameState.maxAttempts}`;

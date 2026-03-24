@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { GameState, GameStats, Puzzle } from '../types';
+import { GameState, GameStats, Puzzle, MatchStatus } from '../types';
 import { shuffleArray } from '../utils/shuffle';
 import { trackEvent } from '../services/analytics';
 import { fetchTodayPuzzle } from '../services/supabase';
@@ -17,6 +17,8 @@ const DEFAULT_STATS: GameStats = {
     1: 0,
     2: 0,
     3: 0,
+    4: 0,
+    5: 0,
     fail: 0,
   },
 };
@@ -135,11 +137,12 @@ export function useGameState(previewPuzzleId?: string | null) {
         lastPlayedDate: new Date().toISOString().split('T')[0],
         currentPuzzleId: targetPuzzle.id,
         attempts: 0,
-        maxAttempts: 3,
+        maxAttempts: 5,
         status: 'playing',
         currentOrder: initialOrder,
         lockedPositions: Array(6).fill(false),
         history: [],
+        cardStatuses: {},
       };
       
       setGameState(newState);
@@ -177,17 +180,29 @@ export function useGameState(previewPuzzleId?: string | null) {
     }
 
     const newLockedPositions = [...gameState.lockedPositions];
-    const attemptResult: boolean[] = Array(6).fill(false);
+    const attemptResult: MatchStatus[] = Array(6).fill('gray');
+    const newCardStatuses = { ...(gameState.cardStatuses || {}) };
     let allCorrect = true;
 
     for (let i = 0; i < 6; i++) {
-      const isCorrect = gameState.currentOrder[i] === puzzle.correctOrder[i];
-      if (isCorrect) {
+      const cardId = gameState.currentOrder[i];
+      const trueIndex = puzzle.correctOrder.indexOf(cardId);
+      
+      let status: MatchStatus = 'gray';
+      
+      if (trueIndex === i) {
+        status = 'green';
         newLockedPositions[i] = true;
-        attemptResult[i] = true;
       } else {
         allCorrect = false;
+        // Check if within 1 slot (Yellow)
+        if (Math.abs(trueIndex - i) === 1) {
+          status = 'yellow';
+        }
       }
+      
+      attemptResult[i] = status;
+      newCardStatuses[cardId] = status;
     }
 
     const newAttempts = gameState.attempts + 1;
@@ -213,6 +228,7 @@ export function useGameState(previewPuzzleId?: string | null) {
       lockedPositions: newLockedPositions,
       currentOrder: newOrder,
       history: [...gameState.history, attemptResult],
+      cardStatuses: newCardStatuses,
     };
 
     saveState(newState);
@@ -231,7 +247,9 @@ export function useGameState(previewPuzzleId?: string | null) {
         if (newAttempts === 1) {
           newStats.firstTrySolves += 1;
         }
-        newStats.solveDistribution[newAttempts as 1|2|3] += 1;
+        if (newAttempts <= 5) {
+          newStats.solveDistribution[newAttempts as 1|2|3|4|5] += 1;
+        }
         if (!previewPuzzleId) trackEvent('streak_continued', puzzle.id, { currentStreak: newStats.currentStreak });
       } else {
         newStats.currentStreak = 0;

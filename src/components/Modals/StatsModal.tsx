@@ -41,7 +41,7 @@ export function StatsModal({ isOpen, onClose, stats }: StatsModalProps) {
         <div>
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Guess Distribution</h3>
           <div className="flex flex-col gap-3">
-            {[1, 2, 3, 'fail'].map((key) => {
+            {[1, 2, 3, 4, 5, 'fail'].map((key) => {
               const count = stats.solveDistribution[key as keyof typeof stats.solveDistribution];
               const width = maxDistribution > 0 ? Math.max(8, (count / maxDistribution) * 100) : 8;
               const isFail = key === 'fail';

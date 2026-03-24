@@ -90,6 +90,8 @@ export interface Puzzle {
   status?: PuzzleStatus | 'cut' | 'candidate';
 }
 
+export type MatchStatus = 'green' | 'yellow' | 'gray';
+
 export interface GameState {
   lastPlayedDate: string | null;
   currentPuzzleId: string | null;
@@ -98,7 +100,8 @@ export interface GameState {
   status: 'playing' | 'won' | 'lost';
   currentOrder: string[]; // array of card ids
   lockedPositions: boolean[]; // array of booleans, true if locked at that index
-  history: boolean[][]; // array of locked positions for each attempt
+  history: (boolean | MatchStatus)[][]; // array of match statuses for each attempt
+  cardStatuses?: Record<string, MatchStatus>; // visual status per card id
 }
 
 export interface GameStats {
@@ -111,6 +114,8 @@ export interface GameStats {
     1: number;
     2: number;
     3: number;
+    4: number;
+    5: number;
     fail: number;
   };
 }
