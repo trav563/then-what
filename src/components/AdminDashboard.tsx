@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { getPuzzles, savePuzzle, getSchedule, saveSchedule, getAnalytics } from '../services/db';
+import React, { useState, useEffect, useMemo } from 'react';
+import { fetchAllPuzzlesMapped, upsertPuzzleMapped, fetchSchedule, upsertScheduleEntry, deleteScheduleEntry } from '../services/supabase';
 import { checkAndRunAutomation } from '../services/automation';
 import { PuzzleRecord, PuzzleStatus } from '../types';
-import { X, Calendar, BarChart3, Database, Check, Edit2, Trash2, Play, Plus, Settings, AlertTriangle } from 'lucide-react';
+import { X, Calendar, BarChart3, Database, Check, Edit2, Trash2, Play, Plus, Settings, AlertTriangle, AlertCircle, Loader2 } from 'lucide-react';
 import { BatchesView } from './BatchesView';
 import { AutomationView } from './AutomationView';
 import { humanizeTheme } from '../utils';
@@ -70,12 +70,19 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
   const [statusFilter, setStatusFilter] = useState<PuzzleStatus | 'all'>('all');
   const [scheduleDate, setScheduleDate] = useState('');
   const [schedulingPuzzleId, setSchedulingPuzzleId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadPuzzles = async () => {
+    const data = await fetchAllPuzzlesMapped();
+    setPuzzles(data as PuzzleRecord[]);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    setPuzzles(getPuzzles());
+    loadPuzzles();
   }, []);
 
-  const handleStatusChange = (id: string, newStatus: PuzzleStatus) => {
+  const handleStatusChange = async (id: string, newStatus: PuzzleStatus) => {
     const puzzle = puzzles.find(p => p.id === id);
     if (!puzzle) return;
     
@@ -84,11 +91,11 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
     if (newStatus === 'retired') updated.retiredAt = Date.now();
     if (newStatus === 'rejected') updated.rejectedAt = Date.now();
     
-    savePuzzle(updated);
-    setPuzzles(getPuzzles());
+    await upsertPuzzleMapped(updated);
+    await loadPuzzles();
   };
 
-  const handleSchedule = (id: string) => {
+  const handleSchedule = async (id: string) => {
     if (!scheduleDate) return;
     
     const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -103,22 +110,19 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
       return;
     }
     
-    const schedule = getSchedule();
+    const schedule = await fetchSchedule();
     if (schedule[scheduleDate] && schedule[scheduleDate] !== id) {
-      // Unschedule the old one
       const oldPuzzleId = schedule[scheduleDate];
       const oldPuzzle = puzzles.find(p => p.id === oldPuzzleId);
       if (oldPuzzle && oldPuzzle.status === 'scheduled') {
-        savePuzzle({ ...oldPuzzle, status: 'approved', scheduledFor: undefined });
+        await upsertPuzzleMapped({ ...oldPuzzle, status: 'approved', scheduledFor: undefined });
       }
     }
     
-    schedule[scheduleDate] = id;
-    saveSchedule(schedule);
+    await upsertScheduleEntry(scheduleDate, id);
+    await upsertPuzzleMapped({ ...puzzle, status: 'scheduled', scheduledFor: scheduleDate });
     
-    savePuzzle({ ...puzzle, status: 'scheduled', scheduledFor: scheduleDate });
-    
-    setPuzzles(getPuzzles());
+    await loadPuzzles();
     setSchedulingPuzzleId(null);
     setScheduleDate('');
   };
@@ -283,26 +287,34 @@ function ScheduleView() {
   const [schedule, setSchedule] = useState<Record<string, string>>({});
   const [puzzles, setPuzzles] = useState<PuzzleRecord[]>([]);
   const [filter, setFilter] = useState<'all' | 'approved-safe' | 'legacy'>('all');
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    const [s, p] = await Promise.all([fetchSchedule(), fetchAllPuzzlesMapped()]);
+    setSchedule(s);
+    setPuzzles(p as PuzzleRecord[]);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    setSchedule(getSchedule());
-    setPuzzles(getPuzzles());
+    loadData();
   }, []);
 
-  const handleUnschedule = (date: string) => {
+  const handleUnschedule = async (date: string) => {
     const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     
+    const puzzleId = schedule[date];
+    await deleteScheduleEntry(date);
+    
     const newSchedule = { ...schedule };
-    const puzzleId = newSchedule[date];
     delete newSchedule[date];
-    saveSchedule(newSchedule);
     setSchedule(newSchedule);
     
-    // Update puzzle status back to approved only if it's a valid future/today scheduled puzzle
     const puzzle = puzzles.find(p => p.id === puzzleId);
     if (puzzle && puzzle.status === 'scheduled' && date >= todayStr) {
-      savePuzzle({ ...puzzle, status: 'approved', scheduledFor: undefined });
-      setPuzzles(getPuzzles());
+      await upsertPuzzleMapped({ ...puzzle, status: 'approved', scheduledFor: undefined });
+      const updatedPuzzles = await fetchAllPuzzlesMapped();
+      setPuzzles(updatedPuzzles as PuzzleRecord[]);
     }
   };
 
@@ -347,58 +359,59 @@ function ScheduleView() {
 
   const filteredRows = classifiedRows.filter(r => filter === 'all' || r.classification === filter);
 
-  const handleClearFutureLegacy = () => {
+  const handleClearFutureLegacy = async () => {
     if (!confirm('Are you sure you want to clear all non-approved future scheduled entries?')) return;
     
     const newSchedule = { ...schedule };
     let clearedCount = 0;
     
-    Object.keys(newSchedule).forEach(date => {
+    for (const date of Object.keys(newSchedule)) {
       if (date >= todayStr) {
         const classification = classifyScheduleRow(date, newSchedule[date]);
         if (classification === 'legacy') {
+          await deleteScheduleEntry(date);
           delete newSchedule[date];
           clearedCount++;
         }
       }
-    });
+    }
     
     if (clearedCount > 0) {
-      saveSchedule(newSchedule);
       setSchedule(newSchedule);
-      setPuzzles(getPuzzles());
+      const updatedPuzzles = await fetchAllPuzzlesMapped();
+      setPuzzles(updatedPuzzles as PuzzleRecord[]);
       alert(`Cleared ${clearedCount} future legacy entries.`);
     } else {
       alert('No future legacy entries found.');
     }
   };
 
-  const handleClearAllLegacy = () => {
+  const handleClearAllLegacy = async () => {
     if (!confirm('WARNING: This will clear ALL legacy/test schedule rows, including past ones. Are you sure?')) return;
     
     const newSchedule = { ...schedule };
     let clearedCount = 0;
     
-    Object.keys(newSchedule).forEach(date => {
+    for (const date of Object.keys(newSchedule)) {
       const classification = classifyScheduleRow(date, newSchedule[date]);
       if (classification === 'legacy') {
+        await deleteScheduleEntry(date);
         delete newSchedule[date];
         clearedCount++;
       }
-    });
+    }
     
     if (clearedCount > 0) {
-      saveSchedule(newSchedule);
       setSchedule(newSchedule);
-      setPuzzles(getPuzzles());
+      const updatedPuzzles = await fetchAllPuzzlesMapped();
+      setPuzzles(updatedPuzzles as PuzzleRecord[]);
       alert(`Cleared ${clearedCount} legacy entries.`);
     } else {
       alert('No legacy entries found.');
     }
   };
 
-  const handleAutoFill = (daysToFill: number) => {
-    // Only use approved unscheduled puzzles
+  const handleAutoFill = async (daysToFill: number) => {
     const approvedPuzzles = puzzles.filter(p => p.status === 'approved' && !p.scheduledFor);
     if (approvedPuzzles.length === 0) {
       alert('No approved puzzles available to schedule.');
@@ -412,13 +425,12 @@ function ScheduleView() {
     while (filledCount < daysToFill && approvedPuzzles.length > 0) {
       const dateStr = currentDate.toISOString().split('T')[0];
       
-      // Only fill if date is open
       if (!newSchedule[dateStr]) {
         const puzzleToSchedule = approvedPuzzles.shift()!;
         newSchedule[dateStr] = puzzleToSchedule.id;
         
-        const updatedPuzzle = { ...puzzleToSchedule, status: 'scheduled' as const, scheduledFor: dateStr };
-        savePuzzle(updatedPuzzle);
+        await upsertScheduleEntry(dateStr, puzzleToSchedule.id);
+        await upsertPuzzleMapped({ ...puzzleToSchedule, status: 'scheduled' as const, scheduledFor: dateStr });
         
         filledCount++;
       }
@@ -427,9 +439,9 @@ function ScheduleView() {
     }
     
     if (filledCount > 0) {
-      saveSchedule(newSchedule);
       setSchedule(newSchedule);
-      setPuzzles(getPuzzles());
+      const updatedPuzzles = await fetchAllPuzzlesMapped();
+      setPuzzles(updatedPuzzles as PuzzleRecord[]);
       alert(`Successfully scheduled ${filledCount} puzzles.`);
     } else {
       alert('Could not schedule any puzzles. The upcoming dates might already be full.');
@@ -559,8 +571,10 @@ function AnalyticsView() {
   const [showRawLogs, setShowRawLogs] = useState(false);
 
   useEffect(() => {
-    setEvents(getAnalytics());
-    setPuzzles(getPuzzles());
+    // Analytics events are still local-only (per-device)
+    const stored = localStorage.getItem('then-what-db-analytics');
+    setEvents(stored ? JSON.parse(stored) : []);
+    fetchAllPuzzlesMapped().then(p => setPuzzles(p as PuzzleRecord[]));
   }, []);
 
   // Filter events by time

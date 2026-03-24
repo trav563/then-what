@@ -1,50 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { getAutomationSettings, saveAutomationSettings, getBatches, getPuzzles, savePuzzle, getSchedule, saveSchedule } from '../services/db';
+import { fetchAutomationSettings, saveAutomationSettingsRemote, fetchBatches, fetchAllPuzzlesMapped, upsertPuzzleMapped, fetchSchedule, upsertScheduleEntry } from '../services/supabase';
 import { checkAndRunAutomation, getInventoryHealth } from '../services/automation';
 import { AutomationSettings, PuzzleRecord } from '../types';
 import { Settings, Play, Loader2, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react';
 import { humanizeTheme } from '../utils';
 
 export function AutomationView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => void }) {
-  const [settings, setSettings] = useState<AutomationSettings>(getAutomationSettings());
-  const [health, setHealth] = useState(getInventoryHealth());
+  const [settings, setSettings] = useState<AutomationSettings>({ enabled: false, threshold: 14, batchSize: 20 });
+  const [health, setHealth] = useState({ approvedTotal: 0, approvedUnscheduled: 0, scheduled: 0, aiReviewed: 0, published: 0, daysScheduledAhead: 0 });
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState('');
   const [topCandidates, setTopCandidates] = useState<PuzzleRecord[]>([]);
   const [recentBatch, setRecentBatch] = useState<any>(null);
   const [scheduleDate, setScheduleDate] = useState('');
   const [schedulingPuzzleId, setSchedulingPuzzleId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    // Check automation on load
-    const runCheck = async () => {
-      if (settings.enabled && health.approvedUnscheduled < settings.threshold) {
+    const init = async () => {
+      const [s, h] = await Promise.all([fetchAutomationSettings(), getInventoryHealth()]);
+      setSettings(s as AutomationSettings);
+      setHealth(h);
+      setLoaded(true);
+
+      if (s.enabled && h.approvedUnscheduled < s.threshold) {
         setIsGenerating(true);
         await checkAndRunAutomation(setProgress);
         setIsGenerating(false);
         setProgress('');
-        setHealth(getInventoryHealth());
-        loadTopCandidates();
+        setHealth(await getInventoryHealth());
       }
+      await loadTopCandidates();
     };
-    runCheck();
-    loadTopCandidates();
+    init();
   }, []);
 
-  const loadTopCandidates = () => {
-    const puzzles = getPuzzles();
-    const batches = getBatches();
+  const loadTopCandidates = async () => {
+    const [puzzles, batches] = await Promise.all([fetchAllPuzzlesMapped(), fetchBatches()]);
     const latestBatch = batches.length > 0 ? batches[0] : null;
     setRecentBatch(latestBatch);
     
-    // Show top candidates from all pending ai_reviewed puzzles, prioritizing the latest batch
-    const candidates = puzzles.filter(p => p.isAutoRecommended && (p.status === 'ai_reviewed' || p.status === 'approved'));
+    const candidates = (puzzles as PuzzleRecord[]).filter(p => p.isAutoRecommended && (p.status === 'ai_reviewed' || p.status === 'approved'));
     setTopCandidates(candidates.sort((a, b) => b.createdAt - a.createdAt));
   };
 
-  const handleSaveSettings = (newSettings: AutomationSettings) => {
+  const handleSaveSettings = async (newSettings: AutomationSettings) => {
     setSettings(newSettings);
-    saveAutomationSettings(newSettings);
+    await saveAutomationSettingsRemote(newSettings);
   };
 
   const handleRunNow = async () => {
@@ -53,11 +55,11 @@ export function AutomationView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: stri
     await checkAndRunAutomation(setProgress, true);
     setIsGenerating(false);
     setProgress('');
-    setHealth(getInventoryHealth());
-    loadTopCandidates();
+    setHealth(await getInventoryHealth());
+    await loadTopCandidates();
   };
 
-  const handleStatusChange = (id: string, newStatus: PuzzleRecord['status']) => {
+  const handleStatusChange = async (id: string, newStatus: PuzzleRecord['status']) => {
     const puzzle = topCandidates.find(p => p.id === id);
     if (!puzzle) return;
     
@@ -66,12 +68,12 @@ export function AutomationView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: stri
     if (newStatus === 'retired') updated.retiredAt = Date.now();
     if (newStatus === 'rejected') updated.rejectedAt = Date.now();
     
-    savePuzzle(updated);
-    setHealth(getInventoryHealth());
-    loadTopCandidates();
+    await upsertPuzzleMapped(updated);
+    setHealth(await getInventoryHealth());
+    await loadTopCandidates();
   };
 
-  const handleSchedule = (id: string) => {
+  const handleSchedule = async (id: string) => {
     if (!scheduleDate) return;
     
     const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -86,27 +88,26 @@ export function AutomationView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: stri
       return;
     }
     
-    const schedule = getSchedule();
+    const schedule = await fetchSchedule();
     
     if (schedule[scheduleDate] && schedule[scheduleDate] !== id) {
       const oldPuzzleId = schedule[scheduleDate];
-      const allPuzzles = getPuzzles();
-      const oldPuzzle = allPuzzles.find(p => p.id === oldPuzzleId);
+      const allPuzzles = await fetchAllPuzzlesMapped();
+      const oldPuzzle = (allPuzzles as PuzzleRecord[]).find(p => p.id === oldPuzzleId);
       if (oldPuzzle && oldPuzzle.status === 'scheduled') {
-        savePuzzle({ ...oldPuzzle, status: 'approved', scheduledFor: undefined });
+        await upsertPuzzleMapped({ ...oldPuzzle, status: 'approved', scheduledFor: undefined });
       }
     }
     
-    schedule[scheduleDate] = id;
-    saveSchedule(schedule);
+    await upsertScheduleEntry(scheduleDate, id);
     
     const updated = { ...puzzle, status: 'scheduled' as const, scheduledFor: scheduleDate };
-    savePuzzle(updated);
+    await upsertPuzzleMapped(updated);
     
     setSchedulingPuzzleId(null);
     setScheduleDate('');
-    setHealth(getInventoryHealth());
-    loadTopCandidates();
+    setHealth(await getInventoryHealth());
+    await loadTopCandidates();
   };
 
   return (

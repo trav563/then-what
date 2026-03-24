@@ -1,37 +1,48 @@
-import { getPuzzles, getSchedule, getAutomationSettings, saveBatch, savePuzzle, getBatches } from './db';
+import {
+  fetchAllPuzzlesMapped,
+  upsertPuzzleMapped,
+  fetchSchedule,
+  upsertScheduleEntry,
+  deleteScheduleEntry,
+  fetchBatches,
+  upsertBatch,
+  fetchAutomationSettings,
+  saveAutomationSettingsRemote,
+  callAiFunction,
+} from './supabase';
 import { generatePuzzles } from './puzzleGenerator';
 import { evaluatePuzzle } from './puzzleEvaluator';
-import { GenerationBatch, GenerationSettings, PuzzleRecord } from '../types';
+import { GenerationBatch, GenerationSettings, PuzzleRecord, AutomationSettings } from '../types';
 
 export async function checkAndRunAutomation(onProgress?: (msg: string) => void, force: boolean = false): Promise<boolean> {
-  const settings = getAutomationSettings();
+  const settings = await fetchAutomationSettings();
   
-  const puzzles = getPuzzles();
-  const schedule = getSchedule();
+  const puzzles = await fetchAllPuzzlesMapped();
+  const schedule = await fetchSchedule();
   
   // Calculate approved but unscheduled puzzles
   const scheduledPuzzleIds = new Set(Object.values(schedule));
-  const approvedUnscheduled = puzzles.filter(p => p.status === 'approved' && !scheduledPuzzleIds.has(p.id));
+  const approvedUnscheduled = puzzles.filter((p: any) => p.status === 'approved' && !scheduledPuzzleIds.has(p.id));
   
   const isBelowThreshold = approvedUnscheduled.length < settings.threshold;
   
   if (!settings.enabled || !isBelowThreshold) {
-    if (!force) return false; // No automation needed or enabled
+    if (!force) return false;
   }
 
   // Check if there is already a batch generating
-  const batches = getBatches();
-  const isGenerating = batches.some(b => b.status === 'generating' || b.status === 'evaluating');
+  const batches = await fetchBatches();
+  const isGenerating = batches.some((b: any) => b.status === 'generating' || b.status === 'evaluating');
   if (isGenerating) {
     if (onProgress) onProgress('A generation is already in progress.');
-    return false; // Already running
+    return false;
   }
 
   // Cooldown check: 1 hour
   if (!force && batches.length > 0) {
     const latestBatch = batches[0];
     const timeSinceLastRun = Date.now() - latestBatch.createdAt;
-    const cooldownMs = 60 * 60 * 1000; // 1 hour
+    const cooldownMs = 60 * 60 * 1000;
     if (timeSinceLastRun < cooldownMs) {
       if (onProgress) onProgress('Cooldown active. Skipping auto-generation.');
       return false;
@@ -62,13 +73,13 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
       status: 'evaluating'
     };
 
-    // Save draft puzzles
-    newPuzzles.forEach(p => {
+    // Save draft puzzles to Supabase
+    for (const p of newPuzzles) {
       p.generationBatchId = batchId;
-      savePuzzle(p);
-    });
+      await upsertPuzzleMapped(p);
+    }
     
-    saveBatch(newBatch);
+    await upsertBatch(newBatch);
 
     // Evaluate puzzles
     let evaluatedCount = 0;
@@ -90,7 +101,7 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
           
         puzzle.isAutoRecommended = isAutoRecommended;
         
-        savePuzzle(puzzle);
+        await upsertPuzzleMapped(puzzle);
       } catch (e) {
         console.error("Failed to evaluate puzzle", puzzle.id, e);
       }
@@ -101,34 +112,35 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
     newBatch.status = 'completed';
     
     // Calculate summary
-    const updatedPuzzles = getPuzzles().filter(p => puzzleIds.includes(p.id));
-    const validEvals = updatedPuzzles.filter(p => p.evaluation);
+    const updatedPuzzles = await fetchAllPuzzlesMapped();
+    const batchPuzzles = updatedPuzzles.filter((p: any) => puzzleIds.includes(p.id));
+    const validEvals = batchPuzzles.filter((p: any) => p.evaluation);
     
     if (validEvals.length > 0) {
-      const avgEnding = validEvals.reduce((sum, p) => sum + (p.evaluation?.endingStrength || 0), 0) / validEvals.length;
-      const avgAmbiguity = validEvals.reduce((sum, p) => sum + (p.evaluation?.ambiguityRisk || 0), 0) / validEvals.length;
+      const avgEnding = validEvals.reduce((sum: number, p: any) => sum + (p.evaluation?.endingStrength || 0), 0) / validEvals.length;
+      const avgAmbiguity = validEvals.reduce((sum: number, p: any) => sum + (p.evaluation?.ambiguityRisk || 0), 0) / validEvals.length;
       
       const themes: Record<string, number> = {};
-      updatedPuzzles.forEach(p => {
+      batchPuzzles.forEach((p: any) => {
         themes[p.theme] = (themes[p.theme] || 0) + 1;
       });
 
-      const sortedByScore = [...validEvals].sort((a, b) => {
+      const sortedByScore = [...validEvals].sort((a: any, b: any) => {
         const scoreA = (a.evaluation?.clarity || 0) + (a.evaluation?.endingStrength || 0) - (a.evaluation?.ambiguityRisk || 0);
         const scoreB = (b.evaluation?.clarity || 0) + (b.evaluation?.endingStrength || 0) - (b.evaluation?.ambiguityRisk || 0);
         return scoreB - scoreA;
       });
 
       newBatch.summary = {
-        strongestCandidates: sortedByScore.slice(0, 3).map(p => p.id),
-        weakestCandidates: sortedByScore.slice(-3).map(p => p.id),
+        strongestCandidates: sortedByScore.slice(0, 3).map((p: any) => p.id),
+        weakestCandidates: sortedByScore.slice(-3).map((p: any) => p.id),
         themeDistribution: themes,
         averageEndingStrength: avgEnding,
         averageAmbiguityRisk: avgAmbiguity
       };
     }
 
-    saveBatch(newBatch);
+    await upsertBatch(newBatch);
     if (onProgress) onProgress('Auto-generation complete.');
     return true;
   } catch (error) {
@@ -138,17 +150,17 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
   }
 }
 
-export function getInventoryHealth() {
-  const puzzles = getPuzzles();
-  const schedule = getSchedule();
+export async function getInventoryHealth() {
+  const puzzles = await fetchAllPuzzlesMapped();
+  const schedule = await fetchSchedule();
   
   const scheduledPuzzleIds = new Set(Object.values(schedule));
   
-  const approved = puzzles.filter(p => p.status === 'approved');
-  const approvedUnscheduled = approved.filter(p => !scheduledPuzzleIds.has(p.id));
-  const scheduled = puzzles.filter(p => scheduledPuzzleIds.has(p.id) || p.status === 'scheduled');
-  const aiReviewed = puzzles.filter(p => p.status === 'ai_reviewed');
-  const published = puzzles.filter(p => p.status === 'published');
+  const approved = puzzles.filter((p: any) => p.status === 'approved');
+  const approvedUnscheduled = approved.filter((p: any) => !scheduledPuzzleIds.has(p.id));
+  const scheduled = puzzles.filter((p: any) => scheduledPuzzleIds.has(p.id) || p.status === 'scheduled');
+  const aiReviewed = puzzles.filter((p: any) => p.status === 'ai_reviewed');
+  const published = puzzles.filter((p: any) => p.status === 'published');
   
   // Calculate days scheduled ahead
   const today = new Date();

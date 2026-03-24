@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getBatches, saveBatch, getPuzzles, savePuzzle, getSchedule, saveSchedule } from '../services/db';
+import { fetchBatches, upsertBatch, fetchAllPuzzlesMapped, upsertPuzzleMapped, fetchSchedule, upsertScheduleEntry } from '../services/supabase';
 import { GenerationBatch, GenerationSettings, PuzzleRecord } from '../types';
 import { generatePuzzles } from '../services/puzzleGenerator';
 import { evaluatePuzzle } from '../services/puzzleEvaluator';
@@ -19,7 +19,7 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
   const [excludeThemes, setExcludeThemes] = useState('');
 
   useEffect(() => {
-    setBatches(getBatches());
+    fetchBatches().then(b => setBatches(b as GenerationBatch[]));
   }, []);
 
   const handleGenerate = async () => {
@@ -34,7 +34,6 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
         excludeThemes
       };
 
-      // Generate puzzles
       const newPuzzles = await generatePuzzles(settings);
       
       const batchId = `batch_${Date.now()}`;
@@ -48,14 +47,14 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
         status: 'evaluating'
       };
 
-      // Save draft puzzles
-      newPuzzles.forEach(p => {
+      // Save draft puzzles to Supabase
+      for (const p of newPuzzles) {
         p.generationBatchId = batchId;
-        savePuzzle(p);
-      });
+        await upsertPuzzleMapped(p);
+      }
       
-      saveBatch(newBatch);
-      setBatches(getBatches());
+      await upsertBatch(newBatch);
+      setBatches(await fetchBatches() as GenerationBatch[]);
       setSelectedBatchId(batchId);
 
       // Evaluate puzzles
@@ -66,7 +65,7 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
           const evaluation = await evaluatePuzzle(puzzle);
           puzzle.evaluation = evaluation;
           puzzle.status = 'ai_reviewed';
-          savePuzzle(puzzle);
+          await upsertPuzzleMapped(puzzle);
         } catch (e) {
           console.error("Failed to evaluate puzzle", puzzle.id, e);
         }
@@ -77,35 +76,36 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
       newBatch.status = 'completed';
       
       // Calculate summary
-      const updatedPuzzles = getPuzzles().filter(p => puzzleIds.includes(p.id));
-      const validEvals = updatedPuzzles.filter(p => p.evaluation);
+      const updatedPuzzles = await fetchAllPuzzlesMapped();
+      const batchPuzzles = updatedPuzzles.filter((p: any) => puzzleIds.includes(p.id));
+      const validEvals = batchPuzzles.filter((p: any) => p.evaluation);
       
       if (validEvals.length > 0) {
-        const avgEnding = validEvals.reduce((sum, p) => sum + (p.evaluation?.endingStrength || 0), 0) / validEvals.length;
-        const avgAmbiguity = validEvals.reduce((sum, p) => sum + (p.evaluation?.ambiguityRisk || 0), 0) / validEvals.length;
+        const avgEnding = validEvals.reduce((sum: number, p: any) => sum + (p.evaluation?.endingStrength || 0), 0) / validEvals.length;
+        const avgAmbiguity = validEvals.reduce((sum: number, p: any) => sum + (p.evaluation?.ambiguityRisk || 0), 0) / validEvals.length;
         
         const themes: Record<string, number> = {};
-        updatedPuzzles.forEach(p => {
+        batchPuzzles.forEach((p: any) => {
           themes[p.theme] = (themes[p.theme] || 0) + 1;
         });
 
-        const sortedByScore = [...validEvals].sort((a, b) => {
+        const sortedByScore = [...validEvals].sort((a: any, b: any) => {
           const scoreA = (a.evaluation?.clarity || 0) + (a.evaluation?.endingStrength || 0) - (a.evaluation?.ambiguityRisk || 0);
           const scoreB = (b.evaluation?.clarity || 0) + (b.evaluation?.endingStrength || 0) - (b.evaluation?.ambiguityRisk || 0);
           return scoreB - scoreA;
         });
 
         newBatch.summary = {
-          strongestCandidates: sortedByScore.slice(0, 3).map(p => p.id),
-          weakestCandidates: sortedByScore.slice(-3).map(p => p.id),
+          strongestCandidates: sortedByScore.slice(0, 3).map((p: any) => p.id),
+          weakestCandidates: sortedByScore.slice(-3).map((p: any) => p.id),
           themeDistribution: themes,
           averageEndingStrength: avgEnding,
           averageAmbiguityRisk: avgAmbiguity
         };
       }
 
-      saveBatch(newBatch);
-      setBatches(getBatches());
+      await upsertBatch(newBatch);
+      setBatches(await fetchBatches() as GenerationBatch[]);
       setProgress('');
     } catch (error) {
       console.error(error);
@@ -257,24 +257,24 @@ function BatchDetail({ batch, onPreviewPuzzle }: { batch: GenerationBatch, onPre
   const [schedulingPuzzleId, setSchedulingPuzzleId] = useState<string | null>(null);
 
   useEffect(() => {
-    const allPuzzles = getPuzzles();
-    const batchPuzzles = allPuzzles.filter(p => batch.puzzleIds.includes(p.id));
-    
-    // Sort by recommendation and score
-    batchPuzzles.sort((a, b) => {
-      const recA = a.evaluation?.recommendedDecision === 'approve' ? 2 : a.evaluation?.recommendedDecision === 'revise' ? 1 : 0;
-      const recB = b.evaluation?.recommendedDecision === 'approve' ? 2 : b.evaluation?.recommendedDecision === 'revise' ? 1 : 0;
-      if (recA !== recB) return recB - recA;
+    fetchAllPuzzlesMapped().then(allPuzzles => {
+      const batchPuzzles = (allPuzzles as PuzzleRecord[]).filter(p => batch.puzzleIds.includes(p.id));
       
-      const scoreA = (a.evaluation?.clarity || 0) + (a.evaluation?.endingStrength || 0) - (a.evaluation?.ambiguityRisk || 0);
-      const scoreB = (b.evaluation?.clarity || 0) + (b.evaluation?.endingStrength || 0) - (b.evaluation?.ambiguityRisk || 0);
-      return scoreB - scoreA;
+      batchPuzzles.sort((a, b) => {
+        const recA = a.evaluation?.recommendedDecision === 'approve' ? 2 : a.evaluation?.recommendedDecision === 'revise' ? 1 : 0;
+        const recB = b.evaluation?.recommendedDecision === 'approve' ? 2 : b.evaluation?.recommendedDecision === 'revise' ? 1 : 0;
+        if (recA !== recB) return recB - recA;
+        
+        const scoreA = (a.evaluation?.clarity || 0) + (a.evaluation?.endingStrength || 0) - (a.evaluation?.ambiguityRisk || 0);
+        const scoreB = (b.evaluation?.clarity || 0) + (b.evaluation?.endingStrength || 0) - (b.evaluation?.ambiguityRisk || 0);
+        return scoreB - scoreA;
+      });
+      
+      setPuzzles(batchPuzzles);
     });
-    
-    setPuzzles(batchPuzzles);
   }, [batch]);
 
-  const handleStatusChange = (id: string, newStatus: PuzzleRecord['status']) => {
+  const handleStatusChange = async (id: string, newStatus: PuzzleRecord['status']) => {
     const puzzle = puzzles.find(p => p.id === id);
     if (!puzzle) return;
     
@@ -283,13 +283,12 @@ function BatchDetail({ batch, onPreviewPuzzle }: { batch: GenerationBatch, onPre
     if (newStatus === 'retired') updated.retiredAt = Date.now();
     if (newStatus === 'rejected') updated.rejectedAt = Date.now();
     
-    savePuzzle(updated);
+    await upsertPuzzleMapped(updated);
     
-    // Refresh local state
     setPuzzles(current => current.map(p => p.id === id ? updated : p));
   };
 
-  const handleSchedule = (id: string) => {
+  const handleSchedule = async (id: string) => {
     if (!scheduleDate) return;
     
     const todayStr = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -304,23 +303,21 @@ function BatchDetail({ batch, onPreviewPuzzle }: { batch: GenerationBatch, onPre
       return;
     }
     
-    const schedule = getSchedule();
+    const schedule = await fetchSchedule();
     
     if (schedule[scheduleDate] && schedule[scheduleDate] !== id) {
-      // Unschedule the old one
       const oldPuzzleId = schedule[scheduleDate];
-      const allPuzzles = getPuzzles();
-      const oldPuzzle = allPuzzles.find(p => p.id === oldPuzzleId);
+      const allPuzzles = await fetchAllPuzzlesMapped();
+      const oldPuzzle = (allPuzzles as PuzzleRecord[]).find(p => p.id === oldPuzzleId);
       if (oldPuzzle && oldPuzzle.status === 'scheduled') {
-        savePuzzle({ ...oldPuzzle, status: 'approved', scheduledFor: undefined });
+        await upsertPuzzleMapped({ ...oldPuzzle, status: 'approved', scheduledFor: undefined });
       }
     }
     
-    schedule[scheduleDate] = id;
-    saveSchedule(schedule);
+    await upsertScheduleEntry(scheduleDate, id);
     
     const updated = { ...puzzle, status: 'scheduled' as const, scheduledFor: scheduleDate };
-    savePuzzle(updated);
+    await upsertPuzzleMapped(updated);
     setPuzzles(current => current.map(p => p.id === id ? updated : p));
     
     setSchedulingPuzzleId(null);
