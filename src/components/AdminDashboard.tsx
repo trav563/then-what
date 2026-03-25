@@ -318,24 +318,16 @@ function ScheduleView() {
       }
     }
     
-    // Auto-assign puzzle numbers based on schedule order for puzzles that don't have one
+    // Auto-assign puzzle numbers based on chronological schedule position
+    // #1 = first scheduled date, #2 = second, etc. (like Wordle day count)
     const sortedDatesAll = Object.keys(s).sort();
-    let nextNumber = 1;
-    // Find the highest existing number to continue from there
-    for (const date of sortedDatesAll) {
+    for (let i = 0; i < sortedDatesAll.length; i++) {
+      const date = sortedDatesAll[i];
       const puzzleId = s[date];
+      const expectedNumber = i + 1;
       const puzzle = (p as PuzzleRecord[]).find(px => px.id === puzzleId);
-      if (puzzle?.number && puzzle.number >= nextNumber) {
-        nextNumber = puzzle.number + 1;
-      }
-    }
-    // Assign numbers to puzzles that don't have them, in chronological schedule order
-    for (const date of sortedDatesAll) {
-      const puzzleId = s[date];
-      const puzzle = (p as PuzzleRecord[]).find(px => px.id === puzzleId);
-      if (puzzle && !puzzle.number) {
-        await upsertPuzzleMapped({ ...puzzle, number: nextNumber });
-        nextNumber++;
+      if (puzzle && puzzle.number !== expectedNumber) {
+        await upsertPuzzleMapped({ ...puzzle, number: expectedNumber });
         needsRefresh = true;
       }
     }
