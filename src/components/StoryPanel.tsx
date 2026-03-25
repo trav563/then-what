@@ -40,9 +40,9 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        "w-full max-w-md mx-auto rounded-3xl border-2 p-6 shadow-lg overflow-hidden relative",
+        "w-full max-w-md mx-auto rounded-3xl border p-6 shadow-xl overflow-hidden relative",
         isGold
-          ? "border-amber-300 bg-gradient-to-br from-amber-50/80 via-yellow-50/60 to-amber-50/80"
+          ? "border-[#D4AF37]/60 bg-gradient-to-br from-[#FFFDF8] via-[#FFF9EA] to-[#FFFDF8] shadow-[#D4AF37]/10"
           : "border-emerald-200 bg-gradient-to-br from-emerald-50/60 via-white to-emerald-50/60"
       )}
     >
@@ -51,13 +51,13 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
         <div>
           <p className={cn(
             "text-[10px] font-bold uppercase tracking-widest mb-1",
-            isGold ? "text-amber-500" : "text-emerald-500"
+            isGold ? "text-[#B5911C]" : "text-emerald-500"
           )}>
             {themeLabel}
           </p>
           <h3 className={cn(
             "text-lg font-black tracking-tight",
-            isGold ? "text-amber-900" : "text-slate-900"
+            isGold ? "text-slate-900" : "text-slate-900"
           )}>
             {title}
           </h3>
@@ -67,10 +67,10 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 15, delay: 0.4 }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 border border-amber-300 rounded-full"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFF6E0] border border-[#DEB841] rounded-full shadow-sm"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Perfect</span>
+            <Sparkles className="w-3.5 h-3.5 text-[#C19B2E]" />
+            <span className="text-[11px] font-bold text-[#A88210] uppercase tracking-wider">Perfect</span>
           </motion.div>
         )}
       </div>
@@ -83,7 +83,7 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
       >
         <p className={cn(
           "text-[15px] leading-[1.75] font-medium",
-          isGold ? "text-amber-900/90" : "text-slate-700"
+          isGold ? "text-[#5C4D26]" : "text-slate-700"
         )}>
           {story}
         </p>

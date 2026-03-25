@@ -30,6 +30,8 @@ interface GameBoardProps {
   showStoryMerge?: boolean;
 }
 
+import { cn } from './Card';
+
 export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, showStoryMerge }: GameBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -93,7 +95,7 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
   };
 
   return (
-    <div className="w-full max-w-md mx-auto px-4 pt-4 pb-40">
+    <div className={cn("w-full max-w-md mx-auto px-4 pt-4 transition-all duration-500", showStoryMerge ? "pb-4" : "pb-40")}>
       <div className="mb-6 flex flex-col items-center text-center">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
           Puzzle {puzzle.number}
@@ -124,40 +126,51 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <SortableContext
-          items={unlockedIds}
-          strategy={verticalListSortingStrategy}
+        <motion.div
+          initial={false}
+          animate={{
+            height: showStoryMerge ? 0 : 'auto',
+            opacity: showStoryMerge ? 0 : 1,
+            scale: showStoryMerge ? 0.95 : 1
+          }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="overflow-hidden"
         >
-          <div className="flex flex-col gap-0">
-            {gameState.currentOrder.map((id, index) => {
-              const card = puzzle.cards.find((c) => c.id === id);
-              if (!card) return null;
+          <SortableContext
+            items={unlockedIds}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="flex flex-col gap-0 pb-4">
+              {gameState.currentOrder.map((id, index) => {
+                const card = puzzle.cards.find((c) => c.id === id);
+                if (!card) return null;
 
-              const isLocked = gameState.lockedPositions[index];
+                const isLocked = gameState.lockedPositions[index];
 
-              if (isLocked) {
-              return <LockedCard key={id} id={id} text={card.text} isGold={isGold} />;
-              }
+                if (isLocked) {
+                return <LockedCard key={id} id={id} text={card.text} isGold={isGold} />;
+                }
 
-              return (
-                <motion.div
-                  key={id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: index * 0.06, ease: 'easeOut' }}
-                >
-                  <SortableCard 
-                    key={id} 
-                    id={id} 
-                    text={card.text} 
-                    isLocked={false} 
-                    isDragging={activeId === id}
-                  />
-                </motion.div>
-              );
-            })}
-          </div>
-        </SortableContext>
+                return (
+                  <motion.div
+                    key={id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, delay: index * 0.06, ease: 'easeOut' }}
+                  >
+                    <SortableCard 
+                      key={id} 
+                      id={id} 
+                      text={card.text} 
+                      isLocked={false} 
+                      isDragging={activeId === id}
+                    />
+                  </motion.div>
+                );
+              })}
+            </div>
+          </SortableContext>
+        </motion.div>
         <DragOverlay dropAnimation={dropAnimation}>
           {activeCard ? (
             <SortableCard 

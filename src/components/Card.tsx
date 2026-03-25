@@ -89,10 +89,10 @@ export const LockedCard: React.FC<LockedCardProps> = ({ id, text, isGold }) => {
       animate={{ scale: 1, y: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 400, damping: 22, mass: 0.8 }}
       className={cn(
-        "relative flex items-center p-4 mb-3 rounded-2xl border-2 overflow-hidden",
+        "relative flex items-center p-4 mb-3 rounded-2xl border overflow-hidden",
         isGold
-          ? "border-amber-300 bg-gradient-to-r from-amber-50/60 via-yellow-50/40 to-amber-50/60"
-          : "border-emerald-200 bg-emerald-50/40"
+          ? "border-[#D4AF37]/50 bg-gradient-to-r from-[#FFFDF8] via-[#FFF9EC] to-[#FFFDF8] shadow-sm shadow-[#D4AF37]/10"
+          : "border-emerald-200 border-2 bg-emerald-50/40"
       )}
     >
       <div className="flex-1 pr-4 overflow-hidden">
@@ -102,7 +102,7 @@ export const LockedCard: React.FC<LockedCardProps> = ({ id, text, isGold }) => {
           transition={{ duration: 0.4, delay: 0.1, ease: 'easeOut' }}
           className={cn(
             "text-[15px] font-medium leading-relaxed",
-            isGold ? "text-amber-900" : "text-emerald-900"
+            isGold ? "text-[#5A4924]" : "text-emerald-900"
           )}
         >
           {text}
@@ -117,7 +117,7 @@ export const LockedCard: React.FC<LockedCardProps> = ({ id, text, isGold }) => {
       >
         <CheckCircle2 className={cn(
           "w-5 h-5",
-          isGold ? "text-amber-400" : "text-emerald-400"
+          isGold ? "text-[#D4AF37]" : "text-emerald-400"
         )} />
       </motion.div>
 

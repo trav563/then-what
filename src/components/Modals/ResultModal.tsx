@@ -84,7 +84,7 @@ export function ResultModal({
       <div className="flex flex-col items-center text-center pt-2">
         {isWon ? (
           <div className="mb-8">
-            <p className={`text-sm font-bold uppercase tracking-widest mb-2 ${isGold ? 'text-amber-500' : 'text-emerald-500'}`}>
+            <p className={`text-sm font-bold uppercase tracking-widest mb-2 ${isGold ? 'text-[#C19B2E]' : 'text-emerald-500'}`}>
               Puzzle #{puzzle.number}
             </p>
             <p className="text-4xl font-black text-slate-900 tracking-tight">
@@ -100,9 +100,9 @@ export function ResultModal({
                 transition={{ delay: 0.3, duration: 0.4 }}
                 className="flex items-center justify-center gap-1.5 mt-3"
               >
-                <div className="flex items-center gap-1.5 px-4 py-2 bg-amber-50 border border-amber-200 rounded-full">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  <span className="text-sm font-bold text-amber-700">Perfect Solve</span>
+                <div className="flex items-center gap-1.5 px-4 py-2 bg-[#FFFDF8] border border-[#DEB841] rounded-full shadow-sm">
+                  <Sparkles className="w-4 h-4 text-[#C19B2E]" />
+                  <span className="text-sm font-bold text-[#A88210]">Perfect Solve</span>
                 </div>
               </motion.div>
             )}
@@ -131,9 +131,9 @@ export function ResultModal({
         )}
 
         <div className="flex gap-3 w-full mb-8">
-          <div className={`flex-1 rounded-2xl p-4 border ${isGold ? 'bg-amber-50/50 border-amber-100' : 'bg-orange-50/50 border-orange-100'}`}>
-            <p className={`text-3xl font-black ${isGold ? 'text-amber-600' : 'text-orange-600'}`}>{stats.currentStreak}</p>
-            <p className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${isGold ? 'text-amber-600/60' : 'text-orange-600/60'}`}>Streak</p>
+          <div className={`flex-1 rounded-2xl p-4 border ${isGold ? 'bg-gradient-to-b from-[#FFFDF8] to-[#FFF9EC] border-[#E5C158]/50 shadow-sm shadow-[#D4AF37]/5' : 'bg-orange-50/50 border-orange-100'}`}>
+            <p className={`text-3xl font-black ${isGold ? 'text-[#B5911C]' : 'text-orange-600'}`}>{stats.currentStreak}</p>
+            <p className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${isGold ? 'text-[#B5911C]/70' : 'text-orange-600/60'}`}>Streak</p>
           </div>
           <div className="flex-1 bg-slate-50 rounded-2xl p-4 border border-slate-100">
             <p className="text-3xl font-black text-slate-800">{stats.longestStreak}</p>
@@ -146,7 +146,7 @@ export function ResultModal({
             onClick={handleShare}
             className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-bold text-lg text-white active:scale-[0.98] transition-all shadow-lg ${
               isGold
-                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-amber-500/20'
+                ? 'bg-gradient-to-r from-[#D4AF37] to-[#B8860B] hover:from-[#C49B2E] hover:to-[#A67C0A] shadow-[#D4AF37]/30'
                 : 'bg-slate-900 hover:bg-slate-800 shadow-slate-900/20'
             }`}
           >
