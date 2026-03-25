@@ -302,8 +302,51 @@ function ScheduleView() {
 
   const loadData = async () => {
     const [s, p] = await Promise.all([fetchSchedule(), fetchAllPuzzlesMapped()]);
+    
+    // Auto-archive: mark past scheduled puzzles as 'published'
+    const now = new Date();
+    const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    const pastDates = Object.keys(s).filter(d => d < todayStr);
+    let needsRefresh = false;
+    
+    for (const date of pastDates) {
+      const puzzleId = s[date];
+      const puzzle = (p as PuzzleRecord[]).find(px => px.id === puzzleId);
+      if (puzzle && (puzzle.status === 'scheduled' || puzzle.status === 'approved')) {
+        await upsertPuzzleMapped({ ...puzzle, status: 'published', publishedAt: Date.now() });
+        needsRefresh = true;
+      }
+    }
+    
+    // Auto-assign puzzle numbers based on schedule order for puzzles that don't have one
+    const sortedDatesAll = Object.keys(s).sort();
+    let nextNumber = 1;
+    // Find the highest existing number to continue from there
+    for (const date of sortedDatesAll) {
+      const puzzleId = s[date];
+      const puzzle = (p as PuzzleRecord[]).find(px => px.id === puzzleId);
+      if (puzzle?.number && puzzle.number >= nextNumber) {
+        nextNumber = puzzle.number + 1;
+      }
+    }
+    // Assign numbers to puzzles that don't have them, in chronological schedule order
+    for (const date of sortedDatesAll) {
+      const puzzleId = s[date];
+      const puzzle = (p as PuzzleRecord[]).find(px => px.id === puzzleId);
+      if (puzzle && !puzzle.number) {
+        await upsertPuzzleMapped({ ...puzzle, number: nextNumber });
+        nextNumber++;
+        needsRefresh = true;
+      }
+    }
+    
+    if (needsRefresh) {
+      const refreshed = await fetchAllPuzzlesMapped();
+      setPuzzles(refreshed as PuzzleRecord[]);
+    } else {
+      setPuzzles(p as PuzzleRecord[]);
+    }
     setSchedule(s);
-    setPuzzles(p as PuzzleRecord[]);
     setLoading(false);
   };
 
@@ -647,12 +690,10 @@ function AnalyticsView() {
   const avgAttempts = solves > 0 ? totalAttemptsOnSolves / solves : 0;
 
   // Attempt distribution
-  const attemptDist = { 1: 0, 2: 0, 3: 0, failed: fails };
+  const attemptDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, failed: fails };
   solveEvents.forEach(e => {
     const att = e.data?.attempts;
-    if (att === 1) attemptDist[1]++;
-    else if (att === 2) attemptDist[2]++;
-    else if (att === 3) attemptDist[3]++;
+    if (att >= 1 && att <= 5) attemptDist[att as 1|2|3|4|5]++;
   });
 
   // Daily activity
@@ -745,14 +786,14 @@ function AnalyticsView() {
         <div className="lg:col-span-1">
           <h2 className="text-base font-bold text-slate-800 mb-3">Attempt Distribution</h2>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-            {[1, 2, 3].map(n => (
+            {[1, 2, 3, 4, 5].map(n => (
               <div key={n}>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="font-bold text-emerald-700">Attempt {n}</span>
-                  <span className="font-bold text-slate-700">{attemptDist[n as 1|2|3]}</span>
+                  <span className="font-bold text-slate-700">{attemptDist[n as 1|2|3|4|5]}</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2">
-                  <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${completedRuns > 0 ? (attemptDist[n as 1|2|3] / completedRuns) * 100 : 0}%`, opacity: 1 - (n - 1) * 0.2 }} />
+                  <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${completedRuns > 0 ? (attemptDist[n as 1|2|3|4|5] / completedRuns) * 100 : 0}%`, opacity: 1 - (n - 1) * 0.15 }} />
                 </div>
               </div>
             ))}
