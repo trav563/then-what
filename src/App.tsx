@@ -21,6 +21,7 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [showStoryMerge, setShowStoryMerge] = useState(false);
+  const [canToggleView, setCanToggleView] = useState(false);
 
   // Admin state
   const [isAdminRoute, setIsAdminRoute] = useState(false);
@@ -66,17 +67,16 @@ export default function App() {
     }
   }, [isLoaded, stats.puzzlesPlayed, isAdminRoute]);
 
-  // Show story merge and then result modal when game ends
+  // Show story merge when game ends
   useEffect(() => {
     if (gameState && gameState.status !== 'playing') {
       if (gameState.status === 'won') {
-        // Story merge first, then result modal
-        const storyTimer = setTimeout(() => setShowStoryMerge(true), 500);
-        const resultTimer = setTimeout(() => setShowResult(true), 2200);
-        return () => {
-          clearTimeout(storyTimer);
-          clearTimeout(resultTimer);
-        };
+        // Story merge only; user must manually click View Results
+        const storyTimer = setTimeout(() => {
+          setShowStoryMerge(true);
+          setCanToggleView(true);
+        }, 500);
+        return () => clearTimeout(storyTimer);
       } else {
         // Lost — just show result modal
         const timer = setTimeout(() => setShowResult(true), 800);
@@ -197,6 +197,31 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* View Toggle (Only shown after puzzle solved) */}
+        {canToggleView && (
+          <div className="mx-auto max-w-md px-4 pt-2 -mb-2 relative z-10 w-full flex justify-center">
+            <div className="flex bg-slate-200/60 p-1 rounded-[14px] w-full max-w-[200px]">
+              <button 
+                onClick={() => setShowStoryMerge(false)}
+                className={`flex-1 py-1.5 text-[13px] font-bold rounded-xl transition-all ${
+                  !showStoryMerge ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Cards
+              </button>
+              <button 
+                onClick={() => setShowStoryMerge(true)}
+                className={`flex-1 py-1.5 text-[13px] font-bold rounded-xl transition-all ${
+                  showStoryMerge ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Story
+              </button>
+            </div>
+          </div>
+        )}
+
         <GameBoard 
           puzzle={puzzle} 
           gameState={gameState} 
