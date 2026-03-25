@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, CheckCircle2 } from 'lucide-react';
@@ -10,7 +10,6 @@ interface CardProps {
   id: string;
   text: string;
   isLocked: boolean;
-  isYellow?: boolean;
   isDragging?: boolean;
   isOverlay?: boolean;
 }
@@ -19,7 +18,7 @@ export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
-export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isYellow, isDragging, isOverlay }) => {
+export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isDragging, isOverlay }) => {
   const {
     attributes,
     listeners,
@@ -40,7 +39,7 @@ export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isYellow
       style={style}
       className={cn(
         "relative flex items-center p-4 mb-3 rounded-2xl border-2 bg-white shadow-sm transition-colors duration-200",
-        isLocked ? "border-emerald-200 bg-emerald-50/40" : isYellow ? "border-amber-300 bg-amber-50/50" : "border-slate-200",
+        isLocked ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200",
         isOverlay && "shadow-2xl scale-[1.03] border-slate-900 z-50 rotate-2 bg-white",
         isDragging && !isOverlay && "opacity-0",
         !isLocked && !isDragging && !isOverlay && "hover:border-slate-300"
@@ -49,7 +48,7 @@ export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isYellow
       <div className="flex-1 pr-4">
         <p className={cn(
           "text-[15px] font-medium leading-relaxed",
-          isLocked ? "text-emerald-900" : isYellow ? "text-amber-900" : "text-slate-700"
+          isLocked ? "text-emerald-900" : "text-slate-700"
         )}>
           {isLocked || text.split(' ').length <= 3 ? text : text.split(' ').slice(0, 3).join(' ') + '...'}
         </p>
@@ -73,28 +72,64 @@ export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isYellow
   );
 };
 
-export const LockedCard: React.FC<Omit<CardProps, 'isLocked'>> = ({ id, text }) => {
+interface LockedCardProps {
+  id: string;
+  text: string;
+  isGold?: boolean;
+}
+
+export const LockedCard: React.FC<LockedCardProps> = ({ id, text, isGold }) => {
+  useEffect(() => {
+    if (navigator.vibrate) navigator.vibrate(15);
+  }, []);
+
   return (
     <motion.div
-      initial={{ scale: 0.98, opacity: 0.5 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
-      className="relative flex items-center p-4 mb-3 rounded-2xl border-2 bg-emerald-50/40 border-emerald-200"
+      initial={{ scale: 0.96, y: 4, opacity: 0.6 }}
+      animate={{ scale: 1, y: 0, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 22, mass: 0.8 }}
+      className={cn(
+        "relative flex items-center p-4 mb-3 rounded-2xl border-2 overflow-hidden",
+        isGold
+          ? "border-amber-300 bg-gradient-to-r from-amber-50/60 via-yellow-50/40 to-amber-50/60"
+          : "border-emerald-200 bg-emerald-50/40"
+      )}
     >
-      <div className="flex-1 pr-4">
-        <p className="text-[15px] font-medium leading-relaxed text-emerald-900">
+      <div className="flex-1 pr-4 overflow-hidden">
+        <motion.p
+          initial={{ opacity: 0, filter: 'blur(4px)' }}
+          animate={{ opacity: 1, filter: 'blur(0px)' }}
+          transition={{ duration: 0.4, delay: 0.1, ease: 'easeOut' }}
+          className={cn(
+            "text-[15px] font-medium leading-relaxed",
+            isGold ? "text-amber-900" : "text-emerald-900"
+          )}
+        >
           {text}
-        </p>
+        </motion.p>
       </div>
       
       <motion.div 
-        initial={{ scale: 0, opacity: 0, rotate: -45 }}
+        initial={{ scale: 0, opacity: 0, rotate: -90 }}
         animate={{ scale: 1, opacity: 1, rotate: 0 }}
-        transition={{ type: "spring", stiffness: 500, damping: 25, delay: 0.15 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 20, delay: 0.15 }}
         className="flex-shrink-0 w-8 flex justify-center items-center"
       >
-        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+        <CheckCircle2 className={cn(
+          "w-5 h-5",
+          isGold ? "text-amber-400" : "text-emerald-400"
+        )} />
       </motion.div>
+
+      {/* Subtle shimmer sweep for gold */}
+      {isGold && (
+        <motion.div
+          initial={{ x: '-100%' }}
+          animate={{ x: '200%' }}
+          transition={{ duration: 0.8, delay: 0.3, ease: 'easeInOut' }}
+          className="absolute inset-0 w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent pointer-events-none"
+        />
+      )}
     </motion.div>
   );
 };

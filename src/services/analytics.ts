@@ -5,7 +5,7 @@ const SESSION_ID = crypto.randomUUID();
 
 type EventType = 'puzzle_loaded' | 'puzzle_started' | 'attempt_submitted' |
   'puzzle_solved' | 'puzzle_failed' | 'results_shared' |
-  'streak_continued' | 'streak_broken';
+  'streak_continued' | 'streak_broken' | 'gold_solve';
 
 /**
  * Track an analytics event in Supabase.

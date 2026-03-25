@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { GameState, GameStats, Puzzle, MatchStatus } from '../types';
+import { GameState, GameStats, Puzzle } from '../types';
 import { shuffleArray } from '../utils/shuffle';
 import { trackEvent } from '../services/analytics';
 import { fetchTodayPuzzle } from '../services/supabase';
@@ -53,6 +53,7 @@ export function useGameState(previewPuzzleId?: string | null) {
               title: response.title,
               theme: response.theme,
               flavorText: response.flavor_text,
+              storyText: response.story_text,
               cards: response.cards,
               correctOrder: response.correct_order,
             };
@@ -142,7 +143,6 @@ export function useGameState(previewPuzzleId?: string | null) {
         currentOrder: initialOrder,
         lockedPositions: Array(6).fill(false),
         history: [],
-        cardStatuses: {},
       };
       
       setGameState(newState);
@@ -180,29 +180,17 @@ export function useGameState(previewPuzzleId?: string | null) {
     }
 
     const newLockedPositions = [...gameState.lockedPositions];
-    const attemptResult: MatchStatus[] = Array(6).fill('gray');
-    const newCardStatuses = { ...(gameState.cardStatuses || {}) };
+    const attemptResult: boolean[] = Array(6).fill(false);
     let allCorrect = true;
 
     for (let i = 0; i < 6; i++) {
       const cardId = gameState.currentOrder[i];
-      const trueIndex = puzzle.correctOrder.indexOf(cardId);
-      
-      let status: MatchStatus = 'gray';
-      
-      if (trueIndex === i) {
-        status = 'green';
+      if (cardId === puzzle.correctOrder[i]) {
+        attemptResult[i] = true;
         newLockedPositions[i] = true;
       } else {
         allCorrect = false;
-        // Check if within 1 slot (Yellow)
-        if (Math.abs(trueIndex - i) === 1) {
-          status = 'yellow';
-        }
       }
-      
-      attemptResult[i] = status;
-      newCardStatuses[cardId] = status;
     }
 
     const newAttempts = gameState.attempts + 1;
@@ -212,6 +200,7 @@ export function useGameState(previewPuzzleId?: string | null) {
     if (allCorrect) {
       newStatus = 'won';
       if (!previewPuzzleId) trackEvent('puzzle_solved', puzzle.id, { attempts: newAttempts });
+      if (!previewPuzzleId && newAttempts === 1) trackEvent('gold_solve', puzzle.id);
     } else if (newAttempts >= gameState.maxAttempts) {
       newStatus = 'lost';
       if (!previewPuzzleId) trackEvent('puzzle_failed', puzzle.id);
@@ -228,7 +217,6 @@ export function useGameState(previewPuzzleId?: string | null) {
       lockedPositions: newLockedPositions,
       currentOrder: newOrder,
       history: [...gameState.history, attemptResult],
-      cardStatuses: newCardStatuses,
     };
 
     saveState(newState);

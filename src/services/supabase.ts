@@ -17,6 +17,7 @@ export interface TodayPuzzleResponse {
   title: string;
   theme: string;
   flavor_text?: string;
+  story_text?: string;
   cards: { id: string; text: string }[];
   correct_order: string[];
 }
@@ -219,6 +220,7 @@ export function puzzleToDbFormat(puzzle: any) {
     generation_batch_id: puzzle.generationBatchId || null,
     similarity_warning: puzzle.similarityWarning || null,
     is_auto_recommended: puzzle.isAutoRecommended || false,
+    story_text: puzzle.storyText || null,
     created_at: puzzle.createdAt ? new Date(puzzle.createdAt).toISOString() : new Date().toISOString(),
     updated_at: new Date().toISOString(),
     approved_at: puzzle.approvedAt ? new Date(puzzle.approvedAt).toISOString() : null,
@@ -245,6 +247,7 @@ export function puzzleFromDbFormat(row: any) {
     generationBatchId: row.generation_batch_id,
     similarityWarning: row.similarity_warning,
     isAutoRecommended: row.is_auto_recommended,
+    storyText: row.story_text || undefined,
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
     updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
     approvedAt: row.approved_at ? new Date(row.approved_at).getTime() : undefined,

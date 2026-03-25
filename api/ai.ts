@@ -84,6 +84,7 @@ For each puzzle, provide:
 - title: A short, catchy title
 - theme: The general category (e.g., "office chaos")
 - cards: An array of exactly 6 strings, representing the story in the CORRECT chronological order.
+- story_text: A single polished paragraph that lightly stitches the 6 cards into a flowing mini-story. Stay faithful to the original card text. You may add very light connective phrasing for readability, but do NOT expand or add new content. The player should feel "that's the story I just built."
 `;
 
   const response = await fetch(
@@ -102,9 +103,10 @@ For each puzzle, provide:
               properties: {
                 title: { type: 'STRING' },
                 theme: { type: 'STRING' },
-                cards: { type: 'ARRAY', items: { type: 'STRING' } }
+                cards: { type: 'ARRAY', items: { type: 'STRING' } },
+                story_text: { type: 'STRING' }
               },
-              required: ['title', 'theme', 'cards']
+              required: ['title', 'theme', 'cards', 'story_text']
             }
           }
         }

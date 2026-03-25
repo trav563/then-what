@@ -37,6 +37,7 @@ export interface PuzzleRecord {
   generationBatchId?: string;
   similarityWarning?: string;
   isAutoRecommended?: boolean;
+  storyText?: string;
 }
 
 export interface GenerationSettings {
@@ -87,10 +88,9 @@ export interface Puzzle {
   cards: CardData[];
   correctOrder: string[]; // array of card ids
   flavorText?: string;
+  storyText?: string;
   status?: PuzzleStatus | 'cut' | 'candidate';
 }
-
-export type MatchStatus = 'green' | 'yellow' | 'gray';
 
 export interface GameState {
   lastPlayedDate: string | null;
@@ -100,8 +100,7 @@ export interface GameState {
   status: 'playing' | 'won' | 'lost';
   currentOrder: string[]; // array of card ids
   lockedPositions: boolean[]; // array of booleans, true if locked at that index
-  history: (boolean | MatchStatus)[][]; // array of match statuses for each attempt
-  cardStatuses?: Record<string, MatchStatus>; // visual status per card id
+  history: boolean[][]; // array of correct/incorrect for each attempt
 }
 
 export interface GameStats {

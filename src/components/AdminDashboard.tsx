@@ -682,6 +682,8 @@ function AnalyticsView() {
   const avgAttempts = solves > 0 ? totalAttemptsOnSolves / solves : 0;
 
   // Attempt distribution
+  const goldSolves = filteredEvents.filter(e => e.event_type === 'gold_solve').length;
+  const goldSolveRate = solves > 0 ? (goldSolves / solves) * 100 : 0;
   const attemptDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, failed: fails };
   solveEvents.forEach(e => {
     const att = e.data?.attempts;
@@ -758,6 +760,8 @@ function AnalyticsView() {
         <KPICard label="Solve Rate" value={`${solveRate.toFixed(1)}%`} subtitle="Of completed runs" color="text-emerald-600" />
         <KPICard label="Avg Attempts" value={avgAttempts.toFixed(1)} subtitle="On solved puzzles" color="text-indigo-600" />
         <KPICard label="Drop-off Rate" value={`${dropOffRate.toFixed(1)}%`} subtitle="Loaded but never started" color="text-amber-600" />
+        <KPICard label="Gold Solves" value={goldSolves} subtitle="First-try perfects" color="text-amber-500" />
+        <KPICard label="Gold Rate" value={`${goldSolveRate.toFixed(1)}%`} subtitle="Of all solves" color="text-amber-600" />
         <KPICard label="Wins / Losses" value={`${solves} / ${fails}`} subtitle="Absolute counts" color="text-slate-800" />
         <KPICard label="Fail Rate" value={`${failRate.toFixed(1)}%`} subtitle="Of completed runs" color="text-red-600" />
       </div>

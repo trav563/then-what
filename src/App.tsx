@@ -5,6 +5,7 @@ import { GameBoard } from './components/GameBoard';
 import { HelpModal } from './components/Modals/HelpModal';
 import { StatsModal } from './components/Modals/StatsModal';
 import { ResultModal } from './components/Modals/ResultModal';
+import { StoryPanel } from './components/StoryPanel';
 import { AdminLogin } from './components/AdminLogin';
 import { getSession, onAuthStateChange, signOut } from './services/supabase';
 
@@ -19,6 +20,7 @@ export default function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showResult, setShowResult] = useState(false);
+  const [showStoryMerge, setShowStoryMerge] = useState(false);
 
   // Admin state
   const [isAdminRoute, setIsAdminRoute] = useState(false);
@@ -64,11 +66,22 @@ export default function App() {
     }
   }, [isLoaded, stats.puzzlesPlayed, isAdminRoute]);
 
-  // Show result modal when game ends
+  // Show story merge and then result modal when game ends
   useEffect(() => {
     if (gameState && gameState.status !== 'playing') {
-      const timer = setTimeout(() => setShowResult(true), 800);
-      return () => clearTimeout(timer);
+      if (gameState.status === 'won') {
+        // Story merge first, then result modal
+        const storyTimer = setTimeout(() => setShowStoryMerge(true), 500);
+        const resultTimer = setTimeout(() => setShowResult(true), 2200);
+        return () => {
+          clearTimeout(storyTimer);
+          clearTimeout(resultTimer);
+        };
+      } else {
+        // Lost — just show result modal
+        const timer = setTimeout(() => setShowResult(true), 800);
+        return () => clearTimeout(timer);
+      }
     }
   }, [gameState?.status]);
 
@@ -188,8 +201,24 @@ export default function App() {
           puzzle={puzzle} 
           gameState={gameState} 
           onReorder={reorderCards} 
-          onSubmit={submitAttempt} 
+          onSubmit={submitAttempt}
+          isGold={gameState.status === 'won' && gameState.attempts === 1}
+          showStoryMerge={showStoryMerge}
         />
+
+        {/* Story Merge Panel */}
+        {showStoryMerge && gameState.status === 'won' && (
+          <div className="px-4 pb-32 -mt-4">
+            <StoryPanel
+              cards={puzzle.cards}
+              correctOrder={puzzle.correctOrder}
+              title={puzzle.title}
+              theme={puzzle.theme}
+              isGold={gameState.attempts === 1}
+              storyText={puzzle.storyText}
+            />
+          </div>
+        )}
       </main>
 
       <HelpModal 

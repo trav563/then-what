@@ -26,9 +26,11 @@ interface GameBoardProps {
   gameState: GameState;
   onReorder: (newOrder: string[]) => void;
   onSubmit: () => void;
+  isGold?: boolean;
+  showStoryMerge?: boolean;
 }
 
-export function GameBoard({ puzzle, gameState, onReorder, onSubmit }: GameBoardProps) {
+export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, showStoryMerge }: GameBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -134,7 +136,7 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit }: GameBoardP
               const isLocked = gameState.lockedPositions[index];
 
               if (isLocked) {
-                return <LockedCard key={id} id={id} text={card.text} />;
+              return <LockedCard key={id} id={id} text={card.text} isGold={isGold} />;
               }
 
               return (
@@ -149,7 +151,6 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit }: GameBoardP
                     id={id} 
                     text={card.text} 
                     isLocked={false} 
-                    isYellow={gameState.cardStatuses?.[id] === 'yellow'}
                     isDragging={activeId === id}
                   />
                 </motion.div>
@@ -163,7 +164,6 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit }: GameBoardP
               id={activeCard.id} 
               text={activeCard.text} 
               isLocked={false} 
-              isYellow={gameState.cardStatuses?.[activeCard.id] === 'yellow'}
               isDragging={true}
               isOverlay={true}
             />

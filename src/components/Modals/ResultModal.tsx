@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Modal } from './Modal';
 import { GameState, GameStats, Puzzle } from '../../types';
-import { Share2, BarChart2 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { Share2, BarChart2, Sparkles } from 'lucide-react';
+import { motion } from 'motion/react';
 
 interface ResultModalProps {
   isOpen: boolean;
@@ -27,36 +27,7 @@ export function ResultModal({
   const [copied, setCopied] = useState(false);
 
   const isWon = gameState.status === 'won';
-
-  // Fire confetti on win
-  useEffect(() => {
-    if (!isOpen || !isWon) return;
-    
-    const duration = 2000;
-    const end = Date.now() + duration;
-
-    const frame = () => {
-      confetti({
-        particleCount: 3,
-        angle: 60,
-        spread: 55,
-        origin: { x: 0, y: 0.6 },
-        colors: ['#10b981', '#f59e0b', '#6366f1', '#f43f5e'],
-      });
-      confetti({
-        particleCount: 3,
-        angle: 120,
-        spread: 55,
-        origin: { x: 1, y: 0.6 },
-        colors: ['#10b981', '#f59e0b', '#6366f1', '#f43f5e'],
-      });
-
-      if (Date.now() < end) {
-        requestAnimationFrame(frame);
-      }
-    };
-    frame();
-  }, [isOpen, isWon]);
+  const isGold = isWon && gameState.attempts === 1;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -86,14 +57,11 @@ export function ResultModal({
     let shareText = `THEN WHAT? #${puzzle.number}\n`;
     
     (gameState.history || []).forEach((attempt) => {
-      shareText += attempt.map((status) => {
-        if (status === true || status === 'green') return '🟩';
-        if (status === 'yellow') return '🟨';
-        return '⬜';
-      }).join('') + '\n';
+      shareText += attempt.map((correct) => correct ? '🟩' : '⬜').join('') + '\n';
     });
     
     shareText += `${attemptsStr}/${gameState.maxAttempts}`;
+    if (isGold) shareText += ' ✨';
 
     try {
       if (navigator.share) {
@@ -116,19 +84,27 @@ export function ResultModal({
       <div className="flex flex-col items-center text-center pt-2">
         {isWon ? (
           <div className="mb-8">
-            <p className="text-sm font-bold text-emerald-500 uppercase tracking-widest mb-2">
+            <p className={`text-sm font-bold uppercase tracking-widest mb-2 ${isGold ? 'text-amber-500' : 'text-emerald-500'}`}>
               Puzzle #{puzzle.number}
             </p>
             <p className="text-4xl font-black text-slate-900 tracking-tight">
-              Brilliant!
+              {isGold ? 'Perfect!' : 'Brilliant!'}
             </p>
             <p className="text-lg text-slate-600 mt-2 font-medium">
               Solved in {gameState.attempts}/{gameState.maxAttempts}
             </p>
-            {puzzle.flavorText && (
-              <p className="text-sm text-slate-500 mt-4 italic">
-                "{puzzle.flavorText}"
-              </p>
+            {isGold && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3, duration: 0.4 }}
+                className="flex items-center justify-center gap-1.5 mt-3"
+              >
+                <div className="flex items-center gap-1.5 px-4 py-2 bg-amber-50 border border-amber-200 rounded-full">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span className="text-sm font-bold text-amber-700">Perfect Solve</span>
+                </div>
+              </motion.div>
             )}
           </div>
         ) : (
@@ -139,11 +115,6 @@ export function ResultModal({
             <p className="text-3xl font-black text-slate-900 tracking-tight mb-2">
               Not quite...
             </p>
-            {puzzle.flavorText && (
-              <p className="text-sm text-slate-500 mb-6 italic">
-                "{puzzle.flavorText}"
-              </p>
-            )}
             <div className="flex flex-col gap-2.5 text-left bg-slate-50 p-5 rounded-2xl border border-slate-100">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Correct Order</p>
               {puzzle.correctOrder.map((id, i) => {
@@ -160,9 +131,9 @@ export function ResultModal({
         )}
 
         <div className="flex gap-3 w-full mb-8">
-          <div className="flex-1 bg-orange-50/50 rounded-2xl p-4 border border-orange-100">
-            <p className="text-3xl font-black text-orange-600">{stats.currentStreak}</p>
-            <p className="text-[10px] font-bold text-orange-600/60 uppercase tracking-widest mt-1">Streak</p>
+          <div className={`flex-1 rounded-2xl p-4 border ${isGold ? 'bg-amber-50/50 border-amber-100' : 'bg-orange-50/50 border-orange-100'}`}>
+            <p className={`text-3xl font-black ${isGold ? 'text-amber-600' : 'text-orange-600'}`}>{stats.currentStreak}</p>
+            <p className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${isGold ? 'text-amber-600/60' : 'text-orange-600/60'}`}>Streak</p>
           </div>
           <div className="flex-1 bg-slate-50 rounded-2xl p-4 border border-slate-100">
             <p className="text-3xl font-black text-slate-800">{stats.longestStreak}</p>
@@ -173,7 +144,11 @@ export function ResultModal({
         <div className="w-full flex flex-col gap-3">
           <button
             onClick={handleShare}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-bold text-lg text-white bg-slate-900 hover:bg-slate-800 active:scale-[0.98] transition-all shadow-lg shadow-slate-900/20"
+            className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-bold text-lg text-white active:scale-[0.98] transition-all shadow-lg ${
+              isGold
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-amber-500/20'
+                : 'bg-slate-900 hover:bg-slate-800 shadow-slate-900/20'
+            }`}
           >
             <Share2 className="w-5 h-5" />
             {copied ? 'Copied to clipboard!' : 'Share Result'}
