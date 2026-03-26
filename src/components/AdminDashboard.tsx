@@ -129,6 +129,27 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
 
   const filteredPuzzles = puzzles.filter(p => statusFilter === 'all' || p.status === statusFilter);
 
+  const handleBulkReject = async () => {
+    if (!window.confirm(`Are you sure you want to reject all ${filteredPuzzles.length} currently visible puzzles?`)) return;
+    
+    const puzzlesToUpdate = filteredPuzzles.filter(p => p.status !== 'rejected');
+    if (puzzlesToUpdate.length === 0) return;
+
+    // Optimistically update UI
+    const updatedPuzzles = puzzles.map(p => {
+      if (puzzlesToUpdate.some(up => up.id === p.id)) {
+        return { ...p, status: 'rejected' as const, rejectedAt: Date.now() };
+      }
+      return p;
+    });
+    setPuzzles(updatedPuzzles);
+
+    // Update DB
+    await Promise.all(
+      puzzlesToUpdate.map(p => upsertPuzzleMapped({ ...p, status: 'rejected', rejectedAt: Date.now() }))
+    );
+  };
+
   const inventoryStats = {
     approved: puzzles.filter(p => p.status === 'approved').length,
     scheduled: puzzles.filter(p => p.status === 'scheduled').length,
@@ -167,16 +188,27 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          <StatusFilter active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} label="All" count={puzzles.length} />
-          <StatusFilter active={statusFilter === 'draft'} onClick={() => setStatusFilter('draft')} label="Draft" count={puzzles.filter(p => p.status === 'draft').length} />
-          <StatusFilter active={statusFilter === 'ai_reviewed'} onClick={() => setStatusFilter('ai_reviewed')} label="AI Reviewed" count={inventoryStats.aiReviewed} />
-          <StatusFilter active={statusFilter === 'approved'} onClick={() => setStatusFilter('approved')} label="Approved" count={inventoryStats.approved} />
-          <StatusFilter active={statusFilter === 'scheduled'} onClick={() => setStatusFilter('scheduled')} label="Scheduled" count={inventoryStats.scheduled} />
-          <StatusFilter active={statusFilter === 'published'} onClick={() => setStatusFilter('published')} label="Published" count={inventoryStats.published} />
-          <StatusFilter active={statusFilter === 'retired'} onClick={() => setStatusFilter('retired')} label="Retired" count={puzzles.filter(p => p.status === 'retired').length} />
-          <StatusFilter active={statusFilter === 'rejected'} onClick={() => setStatusFilter('rejected')} label="Rejected" count={puzzles.filter(p => p.status === 'rejected').length} />
+        {/* Filters and Actions */}
+        <div className="flex justify-between items-center pb-2">
+          <div className="flex gap-2 overflow-x-auto">
+            <StatusFilter active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} label="All" count={puzzles.length} />
+            <StatusFilter active={statusFilter === 'draft'} onClick={() => setStatusFilter('draft')} label="Draft" count={puzzles.filter(p => p.status === 'draft').length} />
+            <StatusFilter active={statusFilter === 'ai_reviewed'} onClick={() => setStatusFilter('ai_reviewed')} label="AI Reviewed" count={inventoryStats.aiReviewed} />
+            <StatusFilter active={statusFilter === 'approved'} onClick={() => setStatusFilter('approved')} label="Approved" count={inventoryStats.approved} />
+            <StatusFilter active={statusFilter === 'scheduled'} onClick={() => setStatusFilter('scheduled')} label="Scheduled" count={inventoryStats.scheduled} />
+            <StatusFilter active={statusFilter === 'published'} onClick={() => setStatusFilter('published')} label="Published" count={inventoryStats.published} />
+            <StatusFilter active={statusFilter === 'retired'} onClick={() => setStatusFilter('retired')} label="Retired" count={puzzles.filter(p => p.status === 'retired').length} />
+            <StatusFilter active={statusFilter === 'rejected'} onClick={() => setStatusFilter('rejected')} label="Rejected" count={puzzles.filter(p => p.status === 'rejected').length} />
+          </div>
+
+          {(statusFilter === 'ai_reviewed' || statusFilter === 'draft') && filteredPuzzles.length > 0 && (
+            <button
+              onClick={handleBulkReject}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-100 ml-4"
+            >
+              <Trash2 className="w-4 h-4" /> Reject All Visible
+            </button>
+          )}
         </div>
       </div>
       
