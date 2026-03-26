@@ -54,6 +54,8 @@ export function useGameState(previewPuzzleId?: string | null) {
               theme: response.theme,
               flavorText: response.flavor_text,
               storyText: response.story_text,
+              isTrueStory: response.is_true_story,
+              funFact: response.fun_fact,
               cards: response.cards,
               correctOrder: response.correct_order,
             };
