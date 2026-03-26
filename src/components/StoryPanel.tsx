@@ -127,6 +127,48 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
           className="absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/50 to-transparent pointer-events-none z-0"
         />
       )}
+
+      {/* Delayed Trivia / Epilogue section */}
+      {!isTrueStory && funFact && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 3.5, ease: "easeOut" }}
+          className={cn(
+            "mt-8 pt-5 border-t text-sm relative z-10",
+            isGold ? "border-[#D4AF37]/20" : "border-slate-200/80"
+          )}
+        >
+          <p className={cn(
+            "font-bold flex items-center gap-1.5 mb-1",
+            isGold ? "text-[#A88210]" : "text-slate-700"
+          )}>
+            <span className="text-amber-500 text-lg leading-none">💡</span> Did you know?
+          </p>
+          <p className={cn(
+            "leading-relaxed font-medium",
+            isGold ? "text-[#8A6C11]" : "text-slate-600"
+          )}>
+            {funFact}
+          </p>
+        </motion.div>
+      )}
+
+      {isTrueStory && funFact && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 3.5, ease: "easeOut" }}
+          className={cn(
+            "mt-8 pt-5 border-t text-sm relative z-10",
+             isGold ? "border-[#D4AF37]/20 text-[#8A6C11]" : "border-slate-200/80 text-slate-500"
+          )}
+        >
+          <p className="leading-relaxed font-medium italic">
+            <span className="font-bold not-italic text-slate-700">Fun Fact: </span>{funFact}
+          </p>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
