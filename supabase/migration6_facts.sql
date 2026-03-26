@@ -55,8 +55,7 @@ BEGIN
     COUNT(*) as count
   FROM analytics_events
   WHERE puzzle_id = p_puzzle_id 
-    AND type = 'puzzle_completed'
-    AND data->>'status' = 'won'
+    AND type = 'puzzle_solved'
   GROUP BY (data->>'attempts')::integer
   
   UNION ALL
@@ -66,8 +65,7 @@ BEGIN
     COUNT(*) as count
   FROM analytics_events
   WHERE puzzle_id = p_puzzle_id 
-    AND type = 'puzzle_completed'
-    AND data->>'status' = 'failed';
+    AND type = 'puzzle_failed';
 END;
 $$;
 
