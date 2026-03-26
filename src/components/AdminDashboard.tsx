@@ -209,6 +209,25 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
               <Trash2 className="w-4 h-4" /> Reject All Visible
             </button>
           )}
+
+          {statusFilter === 'rejected' && filteredPuzzles.length > 0 && (
+            <button
+              onClick={async () => {
+                if (!window.confirm(`Are you sure you want to PERMANENTLY DELETE all ${filteredPuzzles.length} rejected puzzles from the database? This cannot be undone and these concepts may be generated again by AI.`)) return;
+                
+                const puzzlesToDelete = filteredPuzzles.map(p => p.id);
+                // Optimistic UI update
+                setPuzzles(current => current.filter(p => !puzzlesToDelete.includes(p.id)));
+                
+                // Real DB deletion using the Supabase client
+                const { supabase } = await import('../services/supabase');
+                await supabase.from('puzzles').delete().in('id', puzzlesToDelete);
+              }}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors border border-slate-200 ml-4"
+            >
+              <Trash2 className="w-4 h-4" /> Delete Permanently
+            </button>
+          )}
         </div>
       </div>
       
