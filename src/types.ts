@@ -91,6 +91,8 @@ export interface Puzzle {
   correctOrder: string[]; // array of card ids
   flavorText?: string;
   storyText?: string;
+  isTrueStory?: boolean;
+  funFact?: string;
   status?: PuzzleStatus | 'cut' | 'candidate';
 }
 

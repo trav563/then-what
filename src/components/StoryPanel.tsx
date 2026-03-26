@@ -116,37 +116,7 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
         </p>
       </motion.div>
 
-      {/* Optional Trivia or Epilogue section */}
-      {!isTrueStory && funFact && (
-        <motion.div variants={itemVariants} className={cn(
-          "mt-5 pt-4 border-t text-sm relative z-10",
-          isGold ? "border-[#D4AF37]/20" : "border-slate-200/60"
-        )}>
-          <p className={cn(
-            "font-bold flex items-center gap-1.5 mb-1",
-            isGold ? "text-[#A88210]" : "text-slate-700"
-          )}>
-            <span className="text-amber-500 text-lg leading-none">💡</span> Did you know?
-          </p>
-          <p className={cn(
-            "leading-relaxed font-medium",
-            isGold ? "text-[#8A6C11]" : "text-slate-600"
-          )}>
-            {funFact}
-          </p>
-        </motion.div>
-      )}
 
-      {isTrueStory && funFact && (
-        <motion.div variants={itemVariants} className={cn(
-          "mt-5 pt-4 border-t text-sm relative z-10",
-           isGold ? "border-[#D4AF37]/20 text-[#8A6C11]" : "border-slate-200/60 text-slate-500"
-        )}>
-          <p className="leading-relaxed font-medium italic">
-            <span className="font-bold not-italic">Fun Fact: </span>{funFact}
-          </p>
-        </motion.div>
-      )}
 
       {/* Elegant Gold Shimmer overlay */}
       {isGold && (

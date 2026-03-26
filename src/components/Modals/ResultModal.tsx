@@ -207,6 +207,27 @@ export function ResultModal({
           </div>
         </div>
 
+        {/* Trivia / Fun Fact Section */}
+        {isWon && puzzle.funFact && (
+          <div className={`w-full text-left p-4 rounded-2xl border mb-6 ${isGold ? 'bg-gradient-to-b from-[#FFFDF8] to-[#FFF6E0] border-[#DEB841]/30 shadow-sm' : 'bg-slate-50 border-slate-100'}`}>
+             {!puzzle.isTrueStory ? (
+               <>
+                 <p className={`text-[13px] font-bold flex items-center gap-1.5 mb-1 ${isGold ? 'text-[#8A6C11]' : 'text-slate-700'}`}>
+                   <span className="text-amber-500 text-base leading-none">💡</span> Did you know?
+                 </p>
+                 <p className={`leading-relaxed text-[13px] font-medium ${isGold ? 'text-[#A88210]' : 'text-slate-600'}`}>
+                   {puzzle.funFact}
+                 </p>
+               </>
+             ) : (
+               <p className={`leading-relaxed text-[13px] font-medium italic ${isGold ? 'text-[#A88210]' : 'text-slate-600'}`}>
+                 <span className="font-bold border-b border-current pb-[1px] mr-1.5 not-italic uppercase tracking-widest text-[9px]">Fun Fact</span>
+                 {puzzle.funFact}
+               </p>
+             )}
+          </div>
+        )}
+
         {renderDistribution()}
 
         <div className="w-full flex flex-col gap-3">
