@@ -75,7 +75,7 @@ FORMAT 2: Bizarre True Stories
 - Provide exactly 6 chronological cards.
 - Provide 'story_text' that politely stitches the cards.
 - Set 'is_true_story' to true.
-- 'fun_fact' is optional here or can be a small epilogue context.
+- REQUIRED: The 'fun_fact' MUST be an Epilogue or additional historical context about the actual event itself (e.g., what happened next, the consequences, or the bizarre aftermath). DO NOT provide generic encyclopedia trivia! (e.g., If the story is about Napoleon fighting rabbits, do NOT provide biological facts about rabbits. Provide a historical fact about the aftermath of the specific event).
 
 Content Rules for BOTH:
 - Exactly 6 cards per puzzle.
@@ -155,10 +155,11 @@ Evaluate the following candidate puzzle based on these criteria:
 - ambiguity risk (1-10): How likely is it that players will validly argue for an alternate order? (1 = very low risk, 10 = very high risk)
 - novelty (1-10): Does this feel fresh compared to typical tropes?
 - fact_accuracy (1-10): If this is a True Story or has a Fun Fact, is it 100% factually accurate, or did the AI hallucinate it? (1 = totally made up, 10 = verified true. If N/A, put 10).
+- true_story_trivia_quality (1-10): If this is a True Story, the fun_fact MUST be an epilogue or specific historical context about the actual event, NOT a generic fact about the topic. (If it's generic trivia for a true story, score it 1).
 - likely difficulty: "easy", "medium", or "hard"
 
 Then provide a recommended decision ("approve", "revise", or "reject") and a short reason (1-2 sentences).
-CRITICAL FACT-CHECKING & LOGIC RULE: If 'is_true_story' is true, and the event didn't actually happen, you MUST reject it. If 'fun_fact' is provided and is false or inaccurate, you MUST reject it. If the chronological sequence contains physical impossibilities or time paradoxes, you MUST reject it.
+CRITICAL FACT-CHECKING & LOGIC RULE: If 'is_true_story' is true, and the event didn't actually happen, you MUST reject it. If 'fun_fact' is provided and is false or inaccurate, you MUST reject it. If the chronological sequence contains physical impossibilities or time paradoxes, you MUST reject it. If 'true_story_trivia_quality' is low because it generated generic Wikipedia trivia for a True event, you MUST reject it and demand an epilogue instead.
 
 Puzzle Data:
 Title: ${puzzle.title}
@@ -188,11 +189,12 @@ ${cardsInOrder}
               anchorStrength: { type: 'NUMBER' },
               ambiguityRisk: { type: 'NUMBER' },
               novelty: { type: 'NUMBER' },
+              true_story_trivia_quality: { type: 'NUMBER' },
               likelyDifficulty: { type: 'STRING' },
               recommendedDecision: { type: 'STRING' },
               shortReason: { type: 'STRING' }
             },
-            required: ['clarity', 'chronology_logic', 'endingStrength', 'anchorStrength', 'ambiguityRisk', 'novelty', 'likelyDifficulty', 'recommendedDecision', 'shortReason']
+            required: ['clarity', 'chronology_logic', 'endingStrength', 'anchorStrength', 'ambiguityRisk', 'novelty', 'true_story_trivia_quality', 'likelyDifficulty', 'recommendedDecision', 'shortReason']
           }
         }
       })
