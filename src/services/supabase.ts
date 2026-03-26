@@ -18,6 +18,8 @@ export interface TodayPuzzleResponse {
   theme: string;
   flavor_text?: string;
   story_text?: string;
+  is_true_story?: boolean;
+  fun_fact?: string;
   cards: { id: string; text: string }[];
   correct_order: string[];
 }
@@ -221,6 +223,8 @@ export function puzzleToDbFormat(puzzle: any) {
     similarity_warning: puzzle.similarityWarning || null,
     is_auto_recommended: puzzle.isAutoRecommended || false,
     story_text: puzzle.storyText || null,
+    is_true_story: puzzle.isTrueStory || false,
+    fun_fact: puzzle.funFact || null,
     created_at: puzzle.createdAt ? new Date(puzzle.createdAt).toISOString() : new Date().toISOString(),
     updated_at: new Date().toISOString(),
     approved_at: puzzle.approvedAt ? new Date(puzzle.approvedAt).toISOString() : null,
@@ -248,6 +252,8 @@ export function puzzleFromDbFormat(row: any) {
     similarityWarning: row.similarity_warning,
     isAutoRecommended: row.is_auto_recommended,
     storyText: row.story_text || undefined,
+    isTrueStory: row.is_true_story || false,
+    funFact: row.fun_fact || undefined,
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
     updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
     approvedAt: row.approved_at ? new Date(row.approved_at).getTime() : undefined,

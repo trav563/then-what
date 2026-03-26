@@ -198,7 +198,11 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
                     )}
                   </div>
                   <h3 className="font-bold text-slate-800">{puzzle.title}</h3>
-                  <p className="text-sm text-slate-500">{humanizeTheme(puzzle.theme)}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-sm text-slate-500">{humanizeTheme(puzzle.theme)}</p>
+                    {puzzle.isTrueStory && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">True Story</span>}
+                    {!puzzle.isTrueStory && puzzle.funFact && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Fiction + Fact</span>}
+                  </div>
                 </div>
                 
                 {puzzle.evaluation && (
@@ -280,6 +284,12 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
                     </div>
                   ))}
                 </div>
+                {puzzle.funFact && (
+                  <div className="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-600">
+                    <span className="font-bold text-slate-700 mr-1">Fun Fact:</span>
+                    {puzzle.funFact}
+                  </div>
+                )}
               </div>
             </div>
           ))}

@@ -58,23 +58,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 async function generatePuzzles(settings: { count: number; themeMix?: string; instructionEmphasis?: string; excludeThemes?: string }) {
   const prompt = `
 You are an expert puzzle designer for a narrative sequencing game called "Then What?".
-The game presents players with 6 sentences out of order. The player must arrange them into the correct chronological sequence to tell a cohesive, funny, or relatable micro-story (usually a mishap or awkward situation).
+The game presents players with 6 sentences out of order. The player must arrange them into the correct chronological sequence.
 
-Generate a batch of ${settings.count} new puzzles.
+Generate a batch of ${settings.count} new puzzles. 
+CRITICAL RULE: Roughly half of your puzzles MUST be "Bizarre True Stories" and the other half MUST be "Fictional Mishaps". 
 
-Content Rules:
+FORMAT 1: Fictional Mishaps
+- A funny, cause-and-effect driven fictional story (e.g., social mishaps, office chaos).
+- Provide exactly 6 chronological cards (5-12 words each).
+- Provide 'story_text' that politely stitches the cards.
+- Set 'is_true_story' to false.
+- REQUIRED: Provide a 'fun_fact' that is a TRUE, verified, highly interesting piece of trivia closely related to the theme of the fictional story. (e.g., if the story is about dropping an AirPod, the fun fact could be about the history of Bluetooth).
+
+FORMAT 2: Bizarre True Stories
+- A true, verified, bizarre, hilarious or fascinating historical event/phenomenon told as a micro-story (e.g., The Great Emu War, the first cat in space).
+- Provide exactly 6 chronological cards.
+- Provide 'story_text' that politely stitches the cards.
+- Set 'is_true_story' to true.
+- 'fun_fact' is optional here or can be a small epilogue context.
+
+Content Rules for BOTH:
 - Exactly 6 cards per puzzle.
-- Short, concrete, mobile-readable cards (about 5-12 words per card).
-- Clear opening/setup beat.
-- Clear ending/payoff beat.
-- Cause-and-effect driven.
-- Understandable without niche knowledge.
-- Avoid vague emotional states.
-- Avoid ambiguous/interchangeable middles.
-- Avoid repetitive premises and repetitive endings.
-- Tone should fit a short chain-reaction mini-disaster story.
-
-Best categories: social mishaps, office chaos, travel mishaps, party disasters, food fails, public embarrassment, small chain reactions.
+- Short, concrete, mobile-readable cards.
+- Clear cause-and-effect sequence with no ambiguous middles.
+- Avoid vague emotional states, focus on action.
 
 ${settings.themeMix ? `Theme targeting: ${settings.themeMix}` : ''}
 ${settings.instructionEmphasis ? `Instruction emphasis: ${settings.instructionEmphasis}` : ''}
@@ -82,9 +89,11 @@ ${settings.excludeThemes ? `Exclude/reduce these themes: ${settings.excludeTheme
 
 For each puzzle, provide:
 - title: A short, catchy title
-- theme: The general category (e.g., "office chaos")
-- cards: An array of exactly 6 strings, representing the story in the CORRECT chronological order.
-- story_text: A single polished paragraph that lightly stitches the 6 cards into a flowing mini-story. Stay faithful to the original card text. You may add very light connective phrasing for readability, but do NOT expand or add new content. The player should feel "that's the story I just built."
+- theme: The general category (e.g., "History", "Coffee Fails")
+- cards: An array of exactly 6 strings in CORRECT chronological order.
+- story_text: A polished paragraph that stitches the cards.
+- is_true_story: boolean indicating if the narrative itself actually happened.
+- fun_fact: a true trivia fact related to the puzzle.
 `;
 
   const response = await fetch(
@@ -104,9 +113,11 @@ For each puzzle, provide:
                 title: { type: 'STRING' },
                 theme: { type: 'STRING' },
                 cards: { type: 'ARRAY', items: { type: 'STRING' } },
-                story_text: { type: 'STRING' }
+                story_text: { type: 'STRING' },
+                is_true_story: { type: 'BOOLEAN' },
+                fun_fact: { type: 'STRING' }
               },
-              required: ['title', 'theme', 'cards', 'story_text']
+              required: ['title', 'theme', 'cards', 'story_text', 'is_true_story']
             }
           }
         }
@@ -126,7 +137,7 @@ For each puzzle, provide:
 
 // ─── Evaluate a Puzzle ───
 
-async function evaluatePuzzle(puzzle: { title: string; theme: string; cards: { id: string; text: string }[]; correctOrder: string[] }) {
+async function evaluatePuzzle(puzzle: { title: string; theme: string; cards: { id: string; text: string }[]; correctOrder: string[]; isTrueStory?: boolean; funFact?: string; }) {
   const cardsInOrder = puzzle.correctOrder.map((id, index) => {
     const card = puzzle.cards.find((c: any) => c.id === id);
     return `${index + 1}. ${card?.text || '???'}`;
@@ -134,7 +145,7 @@ async function evaluatePuzzle(puzzle: { title: string; theme: string; cards: { i
 
   const prompt = `
 You are an expert puzzle designer and playtester for a narrative sequencing game.
-The game presents players with 6 sentences out of order. The player must arrange them into the correct chronological sequence to tell a cohesive, funny, or relatable micro-story (usually a mishap or awkward situation).
+The game presents players with 6 sentences out of order. The player must arrange them into the correct chronological sequence.
 
 Evaluate the following candidate puzzle based on these criteria:
 - clarity (1-10): How clear is the sequence of events? Is there only one logical order?
@@ -142,14 +153,19 @@ Evaluate the following candidate puzzle based on these criteria:
 - anchor strength (1-10): Are there clear "first" and "last" cards that players can easily identify to anchor their solving process?
 - ambiguity risk (1-10): How likely is it that players will validly argue for an alternate order? (1 = very low risk, 10 = very high risk)
 - novelty (1-10): Does this feel fresh compared to typical tropes?
+- fact_accuracy (1-10): If this is a True Story or has a Fun Fact, is it 100% factually accurate, or did the AI hallucinate it? (1 = totally made up, 10 = verified true. If N/A, put 10).
 - likely difficulty: "easy", "medium", or "hard"
 
 Then provide a recommended decision ("approve", "revise", or "reject") and a short reason (1-2 sentences).
+CRITICAL FACT-CHECKING RULE: If 'is_true_story' is true, and the event didn't actually happen, you MUST reject it. If 'fun_fact' is provided and is false or inaccurate, you MUST reject or demand revision.
 
 Puzzle Data:
 Title: ${puzzle.title}
 Theme: ${puzzle.theme}
-Cards in correct order:
+True Story: ${puzzle.isTrueStory ? 'Yes' : 'No'}
+Fun Fact: ${puzzle.funFact || 'None'}
+
+Cards (in correct chronological order):
 ${cardsInOrder}
 `;
 

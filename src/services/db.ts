@@ -26,6 +26,8 @@ export function initDB() {
         theme: p.theme,
         cards: p.cards,
         correctOrder: p.correctOrder,
+        isTrueStory: false,
+        funFact: undefined,
         status,
         source: 'initial_seed',
         createdAt: now,

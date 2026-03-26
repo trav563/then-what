@@ -71,11 +71,11 @@ export default function App() {
   useEffect(() => {
     if (gameState && gameState.status !== 'playing') {
       if (gameState.status === 'won') {
-        // Story merge only; user must manually click View Results
+        // Longer anticipation before the story merge (1.5s)
         const storyTimer = setTimeout(() => {
           setShowStoryMerge(true);
           setCanToggleView(true);
-        }, 500);
+        }, 1500);
         return () => clearTimeout(storyTimer);
       } else {
         // Lost — just show result modal
@@ -241,6 +241,8 @@ export default function App() {
               theme={puzzle.theme}
               isGold={gameState.attempts === 1}
               storyText={puzzle.storyText}
+              isTrueStory={puzzle.isTrueStory}
+              funFact={puzzle.funFact}
             />
           </div>
         )}

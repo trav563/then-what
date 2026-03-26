@@ -29,6 +29,8 @@ export async function generatePuzzles(settings: GenerationSettings): Promise<Puz
       updatedAt: now,
       similarityWarning: undefined,
       storyText: raw.story_text || undefined,
+      isTrueStory: raw.is_true_story || false,
+      funFact: raw.fun_fact || undefined,
     };
   });
 

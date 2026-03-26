@@ -288,6 +288,14 @@ function BatchDetail({ batch, onPreviewPuzzle }: { batch: GenerationBatch, onPre
     setPuzzles(current => current.map(p => p.id === id ? updated : p));
   };
 
+  const handleFactChange = async (id: string, prop: 'isTrueStory' | 'funFact', value: any) => {
+    const puzzle = puzzles.find(p => p.id === id);
+    if (!puzzle) return;
+    const updated = { ...puzzle, [prop]: value };
+    await upsertPuzzleMapped(updated);
+    setPuzzles(current => current.map(p => p.id === id ? updated : p));
+  };
+
   const handleSchedule = async (id: string) => {
     if (!scheduleDate) return;
     
@@ -470,6 +478,32 @@ function BatchDetail({ batch, onPreviewPuzzle }: { batch: GenerationBatch, onPre
                   <span className="text-slate-700">{card.text}</span>
                 </div>
               ))}
+            </div>
+
+            {/* Fact Review Section */}
+            <div className="bg-indigo-50/50 rounded-lg p-3 text-sm space-y-3 border border-indigo-100">
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" 
+                  id={`true-${puzzle.id}`}
+                  checked={puzzle.isTrueStory || false}
+                  onChange={(e) => handleFactChange(puzzle.id, 'isTrueStory', e.target.checked)}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor={`true-${puzzle.id}`} className="font-bold text-slate-700 text-xs cursor-pointer select-none">Bizarre True Story</label>
+                {puzzle.isTrueStory && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ml-auto">True Story</span>}
+                {!puzzle.isTrueStory && puzzle.funFact && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ml-auto">Fiction + Fact</span>}
+              </div>
+              
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-500">Fun Fact / Trivia (Shown on completion)</label>
+                <textarea
+                  value={puzzle.funFact || ''}
+                  onChange={(e) => handleFactChange(puzzle.id, 'funFact', e.target.value)}
+                  placeholder="Enter a true fact..."
+                  className="w-full text-sm border border-slate-200 rounded-lg p-2.5 min-h-[60px] focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                />
+              </div>
             </div>
           </div>
         );

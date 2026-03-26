@@ -23,6 +23,8 @@ export interface PuzzleRecord {
   theme: string;
   cards: CardData[];
   correctOrder: string[];
+  isTrueStory: boolean;
+  funFact?: string;
   status: PuzzleStatus;
   source?: string;
   createdAt: number;

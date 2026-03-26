@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Modal } from './Modal';
 import { GameState, GameStats, Puzzle } from '../../types';
-import { Share2, BarChart2, Sparkles } from 'lucide-react';
+import { Share2, BarChart2, Sparkles, Globe2 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { supabase } from '../../services/supabase';
 
 interface ResultModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export function ResultModal({
 }: ResultModalProps) {
   const [timeLeft, setTimeLeft] = useState('');
   const [copied, setCopied] = useState(false);
+  const [distribution, setDistribution] = useState<{attempts: number, count: number}[] | null>(null);
 
   const isWon = gameState.status === 'won';
   const isGold = isWon && gameState.attempts === 1;
@@ -51,6 +53,70 @@ export function ResultModal({
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && puzzle.id) {
+      supabase.rpc('get_puzzle_distribution', { p_puzzle_id: puzzle.id })
+        .then(({ data, error }) => {
+          if (!error && data) {
+            setDistribution(data as any);
+          }
+        });
+    }
+  }, [isOpen, puzzle.id]);
+
+  const renderDistribution = () => {
+    if (!distribution || distribution.length === 0) return null;
+    
+    // Convert to map
+    const map = new Map<number, number>(distribution.map(d => [d.attempts, Number(d.count)]));
+    const totalPlayers = Array.from(map.values()).reduce((a, b) => a + b, 0);
+    // If no players yet, don't show
+    if (totalPlayers === 0) return null;
+
+    const maxCount = Math.max(...Array.from(map.values()), 1); 
+    const rows = [1, 2, 3, 4, 5, -1];
+
+    return (
+      <div className="w-full bg-slate-50 p-4 pt-3.5 rounded-2xl border border-slate-100 mb-6 relative overflow-hidden">
+        <div className="flex justify-between items-center mb-3">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 flex-1 break-all">
+            <Globe2 className="w-3.5 h-3.5 text-slate-400/80 shrink-0" />
+            Global Pulse
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5 w-full">
+          {rows.map(row => {
+            const count = map.get(row) || 0;
+            const percentage = maxCount === 0 ? 0 : Math.round((count / maxCount) * 100);
+            
+            // Highlight the row if it's the user's attempt
+            const isMyRow = isWon ? row === gameState.attempts : row === -1;
+            
+            return (
+              <div key={row} className="flex items-center text-xs h-5.5 relative">
+                <div className="w-3 text-right font-bold text-slate-400 mr-2 shrink-0">
+                  {row === -1 ? 'X' : row}
+                </div>
+                <div className="flex-1 bg-white border border-slate-100 h-full rounded flex items-center overflow-hidden">
+                  <div 
+                    className={`h-full flex items-center justify-end px-2 text-[10px] sm:text-xs font-bold text-white transition-all duration-1000 ease-out min-w-[20px] sm:min-w-[24px] ${isMyRow ? (isGold ? 'bg-gradient-to-r from-[#D4AF37] to-[#B8860B] shadow-inner' : 'bg-gradient-to-r from-emerald-400 to-emerald-500 shadow-inner') : 'bg-slate-300'}`}
+                    style={{ width: `${Math.max(percentage, 5)}%` }} 
+                  >
+                    {count}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {/* Subtle total players badge */}
+        <div className="absolute top-3 right-3 text-[10px] font-bold text-slate-400 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
+          {totalPlayers} Plays
+        </div>
+      </div>
+    );
+  };
 
   const handleShare = async () => {
     const attemptsStr = isWon ? gameState.attempts : 'X';
@@ -140,6 +206,8 @@ export function ResultModal({
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Max</p>
           </div>
         </div>
+
+        {renderDistribution()}
 
         <div className="w-full flex flex-col gap-3">
           <button
