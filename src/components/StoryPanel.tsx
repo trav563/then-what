@@ -143,7 +143,7 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
            isGold ? "border-[#D4AF37]/20 text-[#8A6C11]" : "border-slate-200/60 text-slate-500"
         )}>
           <p className="leading-relaxed font-medium italic">
-            {funFact}
+            <span className="font-bold not-italic">Fun Fact: </span>{funFact}
           </p>
         </motion.div>
       )}

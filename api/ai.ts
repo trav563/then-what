@@ -149,6 +149,7 @@ The game presents players with 6 sentences out of order. The player must arrange
 
 Evaluate the following candidate puzzle based on these criteria:
 - clarity (1-10): How clear is the sequence of events? Is there only one logical order?
+- chronology_logic (1-10): Are the events physically and temporally possible? (e.g. jumping out of a plane AFTER landing is impossible).
 - ending strength (1-10): Does the final card provide a satisfying punchline or resolution?
 - anchor strength (1-10): Are there clear "first" and "last" cards that players can easily identify to anchor their solving process?
 - ambiguity risk (1-10): How likely is it that players will validly argue for an alternate order? (1 = very low risk, 10 = very high risk)
@@ -157,7 +158,7 @@ Evaluate the following candidate puzzle based on these criteria:
 - likely difficulty: "easy", "medium", or "hard"
 
 Then provide a recommended decision ("approve", "revise", or "reject") and a short reason (1-2 sentences).
-CRITICAL FACT-CHECKING RULE: If 'is_true_story' is true, and the event didn't actually happen, you MUST reject it. If 'fun_fact' is provided and is false or inaccurate, you MUST reject or demand revision.
+CRITICAL FACT-CHECKING & LOGIC RULE: If 'is_true_story' is true, and the event didn't actually happen, you MUST reject it. If 'fun_fact' is provided and is false or inaccurate, you MUST reject it. If the chronological sequence contains physical impossibilities or time paradoxes, you MUST reject it.
 
 Puzzle Data:
 Title: ${puzzle.title}
@@ -182,6 +183,7 @@ ${cardsInOrder}
             type: 'OBJECT',
             properties: {
               clarity: { type: 'NUMBER' },
+              chronology_logic: { type: 'NUMBER' },
               endingStrength: { type: 'NUMBER' },
               anchorStrength: { type: 'NUMBER' },
               ambiguityRisk: { type: 'NUMBER' },
@@ -190,7 +192,7 @@ ${cardsInOrder}
               recommendedDecision: { type: 'STRING' },
               shortReason: { type: 'STRING' }
             },
-            required: ['clarity', 'endingStrength', 'anchorStrength', 'ambiguityRisk', 'novelty', 'likelyDifficulty', 'recommendedDecision', 'shortReason']
+            required: ['clarity', 'chronology_logic', 'endingStrength', 'anchorStrength', 'ambiguityRisk', 'novelty', 'likelyDifficulty', 'recommendedDecision', 'shortReason']
           }
         }
       })
