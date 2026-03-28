@@ -238,6 +238,7 @@ export default function App() {
               storyText={puzzle.storyText}
               isTrueStory={puzzle.isTrueStory}
               funFact={puzzle.funFact}
+              isFailed={gameState.status === 'lost'}
             />
           </div>
         )}

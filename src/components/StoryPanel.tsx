@@ -12,6 +12,7 @@ interface StoryPanelProps {
   storyText?: string;
   isTrueStory?: boolean;
   funFact?: string;
+  isFailed?: boolean;
 }
 
 function stitchStory(cards: { id: string; text: string }[], correctOrder: string[]): string {
@@ -32,7 +33,7 @@ function stitchStory(cards: { id: string; text: string }[], correctOrder: string
     .join(' ');
 }
 
-export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyText, isTrueStory, funFact }: StoryPanelProps) {
+export function StoryPanel({ cards, correctOrder, title, theme, isGold, isFailed, storyText, isTrueStory, funFact }: StoryPanelProps) {
   const story = storyText || stitchStory(cards, correctOrder);
   const themeLabel = theme.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
@@ -66,7 +67,9 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
         "w-full max-w-md mx-auto rounded-3xl border p-7 shadow-2xl overflow-hidden relative",
         isGold
           ? "border-[#D4AF37]/60 bg-gradient-to-br from-[#FFFDF8] via-[#FFF9EA] to-[#FFFDF8] shadow-[#D4AF37]/20"
-          : "border-emerald-200 bg-gradient-to-br from-emerald-50/60 via-white to-emerald-50/60 shadow-emerald-900/5"
+          : isFailed
+            ? "border-slate-200 bg-gradient-to-br from-slate-50/60 via-white to-slate-50/60 shadow-slate-900/5"
+            : "border-emerald-200 bg-gradient-to-br from-emerald-50/60 via-white to-emerald-50/60 shadow-emerald-900/5"
       )}
     >
       {/* Header */}
@@ -75,7 +78,7 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
           <div className="flex items-center gap-2 mb-1.5">
             <p className={cn(
               "text-[10px] font-bold uppercase tracking-widest",
-              isGold ? "text-[#B5911C]" : "text-emerald-500"
+              isGold ? "text-[#B5911C]" : isFailed ? "text-slate-500" : "text-emerald-500"
             )}>
               {themeLabel}
             </p>
@@ -133,7 +136,7 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 3.5, ease: "easeOut" }}
+          transition={{ duration: 0.8, delay: 2.5, ease: "easeOut" }}
           className={cn(
             "mt-8 pt-5 border-t text-sm relative z-10",
             isGold ? "border-[#D4AF37]/20" : "border-slate-200/80"
@@ -158,7 +161,7 @@ export function StoryPanel({ cards, correctOrder, title, theme, isGold, storyTex
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 3.5, ease: "easeOut" }}
+          transition={{ duration: 0.8, delay: 2.5, ease: "easeOut" }}
           className={cn(
             "mt-8 pt-5 border-t text-sm relative z-10",
              isGold ? "border-[#D4AF37]/20 text-[#8A6C11]" : "border-slate-200/80 text-slate-500"

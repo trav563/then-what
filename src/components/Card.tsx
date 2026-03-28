@@ -12,13 +12,15 @@ interface CardProps {
   isLocked: boolean;
   isDragging?: boolean;
   isOverlay?: boolean;
+  isFailed?: boolean;
+  isGold?: boolean;
 }
 
 export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
-export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isDragging, isOverlay }) => {
+export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isDragging, isOverlay, isFailed, isGold }) => {
   const {
     attributes,
     listeners,
@@ -38,8 +40,14 @@ export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isDraggi
       ref={setNodeRef}
       style={style}
       className={cn(
-        "relative flex items-center p-4 mb-3 rounded-2xl border-2 bg-white shadow-sm transition-colors duration-200",
-        isLocked ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200",
+        "relative flex items-center p-4 mb-3 rounded-2xl border-2 shadow-sm transition-colors duration-200",
+        isLocked 
+          ? isGold 
+            ? "border-[#D4AF37]/50 bg-gradient-to-r from-[#FFFDF8] via-[#FFF9EC] to-[#FFFDF8] shadow-sm shadow-[#D4AF37]/10" 
+            : isFailed 
+              ? "border-slate-200 bg-slate-50 text-slate-500" 
+              : "border-emerald-200 bg-emerald-50/40 text-emerald-900"
+          : "border-slate-200 bg-white text-slate-700",
         isOverlay && "shadow-2xl scale-[1.03] border-slate-900 z-50 rotate-2 bg-white",
         isDragging && !isOverlay && "opacity-0",
         !isLocked && !isDragging && !isOverlay && "hover:border-slate-300"
@@ -48,7 +56,7 @@ export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isDraggi
       <div className="flex-1 pr-4">
         <p className={cn(
           "text-[15px] font-medium leading-relaxed",
-          isLocked ? "text-emerald-900" : "text-slate-700"
+          isLocked ? (isGold ? "text-[#5C4D26]" : isFailed ? "text-slate-500" : "text-emerald-900") : "text-slate-700"
         )}>
           {isLocked || text.split(' ').length <= 3 ? text : text.split(' ').slice(0, 3).join(' ') + '...'}
         </p>
@@ -57,7 +65,7 @@ export const SortableCard: React.FC<CardProps> = ({ id, text, isLocked, isDraggi
       <div 
         className={cn(
           "flex-shrink-0 w-10 h-10 flex justify-center items-center rounded-lg transition-colors",
-          isLocked ? "text-emerald-400" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-grab active:cursor-grabbing touch-none"
+          isLocked ? (isFailed ? "text-slate-400" : "text-emerald-400") : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-grab active:cursor-grabbing touch-none"
         )}
         {...(!isLocked ? attributes : {})}
         {...(!isLocked ? listeners : {})}

@@ -146,10 +146,7 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
                 if (!card) return null;
 
                 const isLocked = gameState.lockedPositions[index];
-
-                if (isLocked) {
-                return <LockedCard key={id} id={id} text={card.text} isGold={isGold} />;
-                }
+                const isFailed = gameState.status === 'lost';
 
                 return (
                   <motion.div
@@ -157,12 +154,15 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.35, delay: index * 0.06, ease: 'easeOut' }}
+                    layout
                   >
                     <SortableCard 
                       key={id} 
                       id={id} 
                       text={card.text} 
-                      isLocked={false} 
+                      isLocked={isLocked}
+                      isFailed={isFailed}
+                      isGold={isGold}
                       isDragging={activeId === id}
                     />
                   </motion.div>
