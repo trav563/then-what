@@ -128,6 +128,8 @@ export function ResultModal({
     
     shareText += `${attemptsStr}/${gameState.maxAttempts}`;
     if (isGold) shareText += ' ✨';
+    
+    shareText += '\n\nthen-what.com';
 
     try {
       if (navigator.share) {
