@@ -70,18 +70,13 @@ export default function App() {
   // Show story merge when game ends
   useEffect(() => {
     if (gameState && gameState.status !== 'playing') {
-      if (gameState.status === 'won') {
-        // Longer anticipation before the story merge (1.5s)
+        // Anticipation before the story merge (1.5s)
+        // We do this for both WON and FAILED states so the player always gets the payoff.
         const storyTimer = setTimeout(() => {
           setShowStoryMerge(true);
           setCanToggleView(true);
         }, 1500);
         return () => clearTimeout(storyTimer);
-      } else {
-        // Lost — just show result modal
-        const timer = setTimeout(() => setShowResult(true), 800);
-        return () => clearTimeout(timer);
-      }
     }
   }, [gameState?.status]);
 
@@ -232,7 +227,7 @@ export default function App() {
         />
 
         {/* Story Merge Panel */}
-        {showStoryMerge && gameState.status === 'won' && (
+        {showStoryMerge && gameState.status !== 'playing' && (
           <div className="px-4 pb-32 -mt-4">
             <StoryPanel
               cards={puzzle.cards}
