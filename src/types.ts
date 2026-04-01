@@ -106,6 +106,8 @@ export interface GameState {
   lockedPositions: boolean[]; // array of booleans, true if locked at that index
   history: boolean[][]; // array of correct/incorrect for each attempt
   lastAttemptOrder?: string[]; // to prevent double submissions
+  revealPhase?: 'idle' | 'revealing' | 'done'; // sequential reveal state
+  revealedCards?: number; // how many cards have been revealed so far (0-6)
 }
 
 export interface GameStats {

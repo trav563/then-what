@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -19,22 +19,31 @@ import {
 } from '@dnd-kit/sortable';
 import { SortableCard, LockedCard } from './Card';
 import { GameState, Puzzle } from '../types';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface GameBoardProps {
   puzzle: Puzzle;
   gameState: GameState;
   onReorder: (newOrder: string[]) => void;
-  onSubmit: () => void;
+  onSubmit: () => boolean[] | null;
+  onCommitReveal: (results: boolean[]) => void;
   isGold?: boolean;
   showStoryMerge?: boolean;
+  onGoldCelebration?: () => void;
 }
 
 import { cn } from './Card';
 
-export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, showStoryMerge }: GameBoardProps) {
+const REVEAL_DELAY_MS = 200; // delay between each card reveal
+
+export function GameBoard({ puzzle, gameState, onReorder, onSubmit, onCommitReveal, isGold, showStoryMerge, onGoldCelebration }: GameBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
+  // Sequential reveal state (local to component, drives animations)
+  const [revealResults, setRevealResults] = useState<boolean[] | null>(null);
+  const [revealIndex, setRevealIndex] = useState(-1); // which card index is currently being revealed (-1 = none)
+  const [revealComplete, setRevealComplete] = useState(false);
+  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasOrderChanged = useMemo(() => {
     if (!gameState.lastAttemptOrder) return true;
@@ -57,12 +66,14 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
   }, [gameState.currentOrder, gameState.lockedPositions]);
 
   function handleDragStart(event: DragStartEvent) {
+    if (isChecking || revealResults) return; // prevent dragging during reveal
     setActiveId(event.active.id as string);
     if (navigator.vibrate) navigator.vibrate(10);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
+    if (isChecking || revealResults) return;
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
@@ -98,6 +109,79 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
         },
       },
     }),
+  };
+
+  // ─── Sequential Reveal Logic ───
+  const startReveal = useCallback(() => {
+    if (isChecking || revealResults) return;
+    
+    setIsChecking(true);
+    if (navigator.vibrate) navigator.vibrate(50);
+
+    // Brief initial pause for "checking" feel
+    setTimeout(() => {
+      const results = onSubmit();
+      if (!results) {
+        setIsChecking(false);
+        return;
+      }
+      
+      setRevealResults(results);
+      setRevealIndex(-1);
+      setRevealComplete(false);
+    }, 400);
+  }, [isChecking, revealResults, onSubmit]);
+
+  // Drive the sequential reveal timer
+  useEffect(() => {
+    if (!revealResults || revealComplete) return;
+
+    const nextIndex = revealIndex + 1;
+    if (nextIndex >= 6) {
+      // All cards revealed — commit state
+      setRevealComplete(true);
+      
+      const allCorrect = revealResults.every(r => r);
+      const isGoldSolve = allCorrect && gameState.attempts === 0; // attempts haven't been incremented yet
+
+      // Brief dramatic pause after last reveal before committing
+      revealTimerRef.current = setTimeout(() => {
+        onCommitReveal(revealResults);
+        
+        // Fire gold celebration right when the state commits
+        if (isGoldSolve && onGoldCelebration) {
+          onGoldCelebration();
+        }
+        
+        // Reset local reveal state after a short delay
+        setTimeout(() => {
+          setRevealResults(null);
+          setRevealIndex(-1);
+          setRevealComplete(false);
+          setIsChecking(false);
+        }, 200);
+      }, 500);
+      return;
+    }
+
+    revealTimerRef.current = setTimeout(() => {
+      setRevealIndex(nextIndex);
+      // Haptic tick for each reveal
+      if (navigator.vibrate) {
+        navigator.vibrate(revealResults[nextIndex] ? 15 : 8);
+      }
+    }, nextIndex === 0 ? 100 : REVEAL_DELAY_MS);
+
+    return () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+    };
+  }, [revealResults, revealIndex, revealComplete, onCommitReveal, onGoldCelebration, gameState.attempts]);
+
+  // Determine per-card reveal state for rendering
+  const getCardRevealState = (index: number): 'idle' | 'pending' | 'correct' | 'incorrect' => {
+    if (!revealResults || revealIndex < 0) return 'idle';
+    if (index > revealIndex) return 'pending';
+    return revealResults[index] ? 'correct' : 'incorrect';
   };
 
   return (
@@ -140,7 +224,7 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
             scale: showStoryMerge ? 0.95 : 1
           }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="overflow-hidden"
+          className={showStoryMerge ? "overflow-hidden" : "overflow-visible"}
         >
           <SortableContext
             items={unlockedIds}
@@ -153,23 +237,39 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
 
                 const isLocked = gameState.lockedPositions[index];
                 const isFailed = gameState.status === 'lost';
+                const cardRevealState = getCardRevealState(index);
+                
+                // During reveal, just-revealed correct cards should look like they're locking
+                const showAsRevealing = cardRevealState === 'correct' && !isLocked;
+                const showAsIncorrect = cardRevealState === 'incorrect';
 
                 return (
                   <motion.div
                     key={id}
                     initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.35, delay: index * 0.06, ease: 'easeOut' }}
+                    animate={{ 
+                      opacity: 1, 
+                      y: 0,
+                      // Shake effect for incorrect cards during reveal
+                      x: showAsIncorrect ? [0, -4, 4, -3, 3, 0] : 0,
+                    }}
+                    transition={{ 
+                      duration: 0.35, 
+                      delay: index * 0.06, 
+                      ease: 'easeOut',
+                      x: showAsIncorrect ? { duration: 0.4, ease: 'easeInOut' } : {},
+                    }}
                     layout
                   >
                     <SortableCard 
                       key={id} 
                       id={id} 
                       text={card.text} 
-                      isLocked={isLocked}
+                      isLocked={isLocked || showAsRevealing}
                       isFailed={isFailed}
-                      isGold={isGold}
+                      isGold={isGold && isLocked}
                       isDragging={activeId === id}
+                      revealState={cardRevealState}
                     />
                   </motion.div>
                 );
@@ -196,15 +296,7 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
             <button
               onClick={() => {
                 if (isChecking || !hasOrderChanged) return;
-                
-                setIsChecking(true);
-                if (navigator.vibrate) navigator.vibrate(50);
-                
-                // Keep the checking state visible briefly for tactile feedback
-                setTimeout(() => {
-                  onSubmit();
-                  setIsChecking(false);
-                }, 600); // reduced from 1500 to 600ms
+                startReveal();
               }}
               disabled={isChecking || !hasOrderChanged}
               className={cn(

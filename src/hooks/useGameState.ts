@@ -174,21 +174,45 @@ export function useGameState(previewPuzzleId?: string | null) {
     }
   }, [previewPuzzleId]);
 
-  const submitAttempt = useCallback(() => {
-    if (!gameState || !puzzle || gameState.status !== 'playing') return;
+  // Phase 1: Calculate results and return them for the sequential reveal animation.
+  // Does NOT commit state changes yet — that happens in commitReveal.
+  const submitAttempt = useCallback((): boolean[] | null => {
+    if (!gameState || !puzzle || gameState.status !== 'playing') return null;
 
     if (!previewPuzzleId) {
       trackEvent('attempt_submitted', puzzle.id, { attemptNumber: gameState.attempts + 1 });
     }
 
-    const newLockedPositions = [...gameState.lockedPositions];
     const attemptResult: boolean[] = Array(6).fill(false);
-    let allCorrect = true;
 
     for (let i = 0; i < 6; i++) {
       const cardId = gameState.currentOrder[i];
       if (cardId === puzzle.correctOrder[i]) {
         attemptResult[i] = true;
+      }
+    }
+
+    // Set the reveal phase to 'revealing' so the board can animate
+    saveState({
+      ...gameState,
+      revealPhase: 'revealing',
+      revealedCards: 0,
+      lastAttemptOrder: [...gameState.currentOrder],
+    });
+
+    return attemptResult;
+  }, [gameState, puzzle, saveState, previewPuzzleId]);
+
+  // Phase 2: Called after the sequential reveal animation completes.
+  // Commits the locked positions, status, stats — all the real game logic.
+  const commitReveal = useCallback((attemptResult: boolean[]) => {
+    if (!gameState || !puzzle) return;
+
+    const newLockedPositions = [...gameState.lockedPositions];
+    let allCorrect = true;
+
+    for (let i = 0; i < 6; i++) {
+      if (attemptResult[i]) {
         newLockedPositions[i] = true;
       } else {
         allCorrect = false;
@@ -220,6 +244,8 @@ export function useGameState(previewPuzzleId?: string | null) {
       currentOrder: newOrder,
       history: [...gameState.history, attemptResult],
       lastAttemptOrder: [...gameState.currentOrder],
+      revealPhase: 'done',
+      revealedCards: 6,
     };
 
     saveState(newState);
@@ -267,6 +293,7 @@ export function useGameState(previewPuzzleId?: string | null) {
     isLoaded,
     isArchive,
     submitAttempt,
+    commitReveal,
     reorderCards,
   };
 }

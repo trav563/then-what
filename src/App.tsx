@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import confetti from 'canvas-confetti';
 import { useGameState } from './hooks/useGameState';
 import { Header } from './components/Header';
 import { GameBoard } from './components/GameBoard';
@@ -6,6 +7,7 @@ import { HelpModal } from './components/Modals/HelpModal';
 import { StatsModal } from './components/Modals/StatsModal';
 import { ResultModal } from './components/Modals/ResultModal';
 import { StoryPanel } from './components/StoryPanel';
+import { NarrativeStitch } from './components/NarrativeStitch';
 import { AdminLogin } from './components/AdminLogin';
 import { getSession, onAuthStateChange, signOut } from './services/supabase';
 
@@ -15,7 +17,7 @@ const AdminDashboard = React.lazy(() => import('./components/AdminDashboard').th
 
 export default function App() {
   const [previewPuzzleId, setPreviewPuzzleId] = useState<string | null>(null);
-  const { puzzle, gameState, stats, isLoaded, isArchive, submitAttempt, reorderCards } = useGameState(previewPuzzleId);
+  const { puzzle, gameState, stats, isLoaded, isArchive, submitAttempt, commitReveal, reorderCards } = useGameState(previewPuzzleId);
   
   const [showHelp, setShowHelp] = useState(false);
   const [showStats, setShowStats] = useState(false);
@@ -222,23 +224,51 @@ export default function App() {
           gameState={gameState} 
           onReorder={reorderCards} 
           onSubmit={submitAttempt}
+          onCommitReveal={commitReveal}
           isGold={gameState.status === 'won' && gameState.attempts === 1}
           showStoryMerge={showStoryMerge}
+          onGoldCelebration={() => {
+            // Fire golden confetti from both sides
+            const goldColors = ['#D4AF37', '#FFD700', '#C19B2E', '#B8860B', '#FFF8DC'];
+            confetti({ particleCount: 80, spread: 70, origin: { x: 0.15, y: 0.6 }, colors: goldColors, angle: 60, startVelocity: 45, gravity: 0.8, ticks: 120 });
+            confetti({ particleCount: 80, spread: 70, origin: { x: 0.85, y: 0.6 }, colors: goldColors, angle: 120, startVelocity: 45, gravity: 0.8, ticks: 120 });
+            // Center shimmer burst
+            setTimeout(() => {
+              confetti({ particleCount: 40, spread: 100, origin: { x: 0.5, y: 0.5 }, colors: goldColors, startVelocity: 30, gravity: 0.6, ticks: 100, scalar: 0.8 });
+            }, 300);
+          }}
         />
 
-        {/* Story Merge Panel */}
-        {showStoryMerge && gameState.status !== 'playing' && (
+        {/* Narrative Stitching (Win state) — IS the final story view, no handoff */}
+        {gameState.status === 'won' && showStoryMerge && (
+          <div className="px-4 pb-32 -mt-4">
+            <NarrativeStitch
+              cards={puzzle.cards}
+              correctOrder={puzzle.correctOrder}
+              title={puzzle.title}
+              theme={puzzle.theme}
+              storyText={puzzle.storyText}
+              isGold={gameState.attempts === 1}
+              isVisible={showStoryMerge}
+              isTrueStory={puzzle.isTrueStory}
+              funFact={puzzle.funFact}
+            />
+          </div>
+        )}
+
+        {/* Story Panel — loss state only (immediate, no stitch animation) */}
+        {showStoryMerge && gameState.status === 'lost' && (
           <div className="px-4 pb-32 -mt-4">
             <StoryPanel
               cards={puzzle.cards}
               correctOrder={puzzle.correctOrder}
               title={puzzle.title}
               theme={puzzle.theme}
-              isGold={gameState.attempts === 1}
+              isGold={false}
               storyText={puzzle.storyText}
               isTrueStory={puzzle.isTrueStory}
               funFact={puzzle.funFact}
-              isFailed={gameState.status === 'lost'}
+              isFailed={true}
             />
           </div>
         )}
