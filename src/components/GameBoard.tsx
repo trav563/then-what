@@ -34,6 +34,12 @@ import { cn } from './Card';
 
 export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, showStoryMerge }: GameBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+
+  const hasOrderChanged = useMemo(() => {
+    if (!gameState.lastAttemptOrder) return true;
+    return JSON.stringify(gameState.currentOrder) !== JSON.stringify(gameState.lastAttemptOrder);
+  }, [gameState.currentOrder, gameState.lastAttemptOrder]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -189,12 +195,32 @@ export function GameBoard({ puzzle, gameState, onReorder, onSubmit, isGold, show
           {gameState.status === 'playing' ? (
             <button
               onClick={() => {
+                if (isChecking || !hasOrderChanged) return;
+                
+                setIsChecking(true);
                 if (navigator.vibrate) navigator.vibrate(50);
-                onSubmit();
+                
+                // Keep the checking state visible briefly for tactile feedback
+                setTimeout(() => {
+                  onSubmit();
+                  setIsChecking(false);
+                }, 600); // reduced from 1500 to 600ms
               }}
-              className="w-full py-3.5 rounded-xl font-bold text-base text-white bg-slate-900 hover:bg-slate-800 active:scale-[0.98] transition-all shadow-lg shadow-slate-900/10"
+              disabled={isChecking || !hasOrderChanged}
+              className={cn(
+                "w-full py-3.5 rounded-xl font-bold text-base transition-all",
+                isChecking
+                  ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                  : !hasOrderChanged
+                    ? "bg-slate-200 text-slate-500 cursor-not-allowed border-2 border-slate-300 border-dashed"
+                    : "bg-slate-900 text-white hover:bg-slate-800 active:scale-[0.98] shadow-lg shadow-slate-900/10"
+              )}
             >
-              Check Order
+              {isChecking 
+                ? 'Checking...' 
+                : !hasOrderChanged 
+                  ? 'Change order to try again' 
+                  : 'Check Order'}
             </button>
           ) : (
             <button

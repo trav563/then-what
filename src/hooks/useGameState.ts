@@ -219,6 +219,7 @@ export function useGameState(previewPuzzleId?: string | null) {
       lockedPositions: newLockedPositions,
       currentOrder: newOrder,
       history: [...gameState.history, attemptResult],
+      lastAttemptOrder: [...gameState.currentOrder],
     };
 
     saveState(newState);

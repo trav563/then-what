@@ -105,6 +105,7 @@ export interface GameState {
   currentOrder: string[]; // array of card ids
   lockedPositions: boolean[]; // array of booleans, true if locked at that index
   history: boolean[][]; // array of correct/incorrect for each attempt
+  lastAttemptOrder?: string[]; // to prevent double submissions
 }
 
 export interface GameStats {
