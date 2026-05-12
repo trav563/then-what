@@ -11,13 +11,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'GEMINI_API_KEY not configured on server' });
   }
 
-  // Verify the request has a valid Supabase auth token
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Verify token with Supabase
   const token = authHeader.split(' ')[1];
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -26,7 +24,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Supabase not configured on server' });
   }
 
-  // Verify the JWT with Supabase
   const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
     headers: { Authorization: `Bearer ${token}`, apikey: supabaseServiceKey }
   });
@@ -35,14 +32,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
-  const { action, settings, puzzle } = req.body;
+  const { action, settings, puzzle, existingPuzzles } = req.body;
 
   try {
     if (action === 'generate') {
-      const result = await generatePuzzles(settings);
+      const result = await runGenerate(settings, existingPuzzles || []);
       return res.status(200).json(result);
     } else if (action === 'evaluate') {
-      const result = await evaluatePuzzle(puzzle);
+      const result = await runEvaluate(puzzle);
       return res.status(200).json(result);
     } else {
       return res.status(400).json({ error: 'Invalid action. Use "generate" or "evaluate".' });
@@ -53,15 +50,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+// ─── Shared types ───
+
+export interface ExistingPuzzleHint {
+  title: string;
+  theme: string;
+  isTrueStory?: boolean;
+}
+
+export interface GenerateSettings {
+  count: number;
+  themeMix?: string;
+  instructionEmphasis?: string;
+  excludeThemes?: string;
+}
+
+export interface EvaluatePuzzleInput {
+  title: string;
+  theme: string;
+  cards: { id: string; text: string }[];
+  correctOrder: string[];
+  isTrueStory?: boolean;
+  funFact?: string;
+}
+
 // ─── Generate Puzzles ───
 
-async function generatePuzzles(settings: { count: number; themeMix?: string; instructionEmphasis?: string; excludeThemes?: string }) {
+export async function runGenerate(
+  settings: GenerateSettings,
+  existingPuzzles: ExistingPuzzleHint[]
+) {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+
+  const exclusionBlock = existingPuzzles.length > 0
+    ? `\n\nAVOID DUPLICATES. The following puzzles already exist in the library. Do NOT generate puzzles about the same event, premise, or topic. Variations of titles ("Coffee Spill" vs "The Coffee Disaster") are still considered duplicates and will be rejected. Pick fresh, distinct concepts.\n\nExisting puzzles:\n${existingPuzzles
+        .map(p => `- "${p.title}" [theme: ${p.theme}, ${p.isTrueStory ? 'true_story' : 'fictional'}]`)
+        .join('\n')}\n`
+    : '';
+
   const prompt = `
 You are an expert puzzle designer for a narrative sequencing game called "Then What?".
 The game presents players with 6 sentences out of order. The player must arrange them into the correct chronological sequence.
 
-Generate a batch of ${settings.count} new puzzles. 
-CRITICAL RULE: Roughly half of your puzzles MUST be "Bizarre True Stories" and the other half MUST be "Fictional Mishaps". 
+Generate a batch of ${settings.count} new puzzles.
+CRITICAL RULE: Roughly half of your puzzles MUST be "Bizarre True Stories" and the other half MUST be "Fictional Mishaps".
 
 FORMAT 1: Fictional Mishaps
 - A funny, cause-and-effect driven fictional story (e.g., social mishaps, office chaos).
@@ -86,6 +118,7 @@ Content Rules for BOTH:
 ${settings.themeMix ? `Theme targeting: ${settings.themeMix}` : ''}
 ${settings.instructionEmphasis ? `Instruction emphasis: ${settings.instructionEmphasis}` : ''}
 ${settings.excludeThemes ? `Exclude/reduce these themes: ${settings.excludeThemes}` : ''}
+${exclusionBlock}
 
 For each puzzle, provide:
 - title: A short, catchy title
@@ -137,7 +170,9 @@ For each puzzle, provide:
 
 // ─── Evaluate a Puzzle ───
 
-async function evaluatePuzzle(puzzle: { title: string; theme: string; cards: { id: string; text: string }[]; correctOrder: string[]; isTrueStory?: boolean; funFact?: string; }) {
+export async function runEvaluate(puzzle: EvaluatePuzzleInput) {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+
   const cardsInOrder = puzzle.correctOrder.map((id, index) => {
     const card = puzzle.cards.find((c: any) => c.id === id);
     return `${index + 1}. ${card?.text || '???'}`;

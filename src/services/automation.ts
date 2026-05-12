@@ -13,6 +13,7 @@ import {
 import { generatePuzzles } from './puzzleGenerator';
 import { evaluatePuzzle } from './puzzleEvaluator';
 import { GenerationBatch, GenerationSettings, PuzzleRecord, AutomationSettings } from '../types';
+import { ExistingPuzzleSummary } from './similarity';
 
 export async function checkAndRunAutomation(onProgress?: (msg: string) => void, force: boolean = false): Promise<boolean> {
   const settings = await fetchAutomationSettings();
@@ -60,7 +61,15 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
     };
 
     if (onProgress) onProgress('Generating puzzles...');
-    const newPuzzles = await generatePuzzles(genSettings);
+    const existingHints: ExistingPuzzleSummary[] = puzzles.map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      theme: p.theme,
+      isTrueStory: p.isTrueStory,
+      funFact: p.funFact,
+      firstCardText: p.cards?.[0]?.text,
+    }));
+    const newPuzzles = await generatePuzzles(genSettings, existingHints);
     
     const batchId = `autobatch_${Date.now()}`;
     const puzzleIds = newPuzzles.map(p => p.id);
@@ -83,29 +92,68 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
 
     // Evaluate puzzles
     let evaluatedCount = 0;
+    const autoApprovedIds: string[] = [];
     for (const puzzle of newPuzzles) {
       if (onProgress) onProgress(`Evaluating puzzle ${evaluatedCount + 1} of ${newPuzzles.length}...`);
       try {
         const evaluation = await evaluatePuzzle(puzzle);
         puzzle.evaluation = evaluation;
         puzzle.status = 'ai_reviewed';
-        
-        // Auto-recommendation logic
-        const isAutoRecommended = 
+
+        const isAutoRecommended =
           evaluation.clarity >= 9 &&
           evaluation.endingStrength >= 8 &&
           evaluation.anchorStrength >= 8 &&
           evaluation.ambiguityRisk <= 2 &&
           evaluation.novelty >= 6 &&
           !puzzle.similarityWarning;
-          
+
         puzzle.isAutoRecommended = isAutoRecommended;
-        
+
+        if (isAutoRecommended) {
+          puzzle.status = 'approved';
+          puzzle.approvedAt = Date.now();
+          autoApprovedIds.push(puzzle.id);
+        }
+
         await upsertPuzzleMapped(puzzle);
       } catch (e) {
         console.error("Failed to evaluate puzzle", puzzle.id, e);
       }
       evaluatedCount++;
+    }
+
+    // Auto-schedule freshly-approved puzzles into the next empty dates
+    if (autoApprovedIds.length > 0) {
+      if (onProgress) onProgress(`Auto-scheduling ${autoApprovedIds.length} approved puzzles...`);
+      try {
+        const currentSchedule = await fetchSchedule();
+        const scheduledDates = new Set(Object.keys(currentSchedule));
+        const today = new Date();
+        const queue = [...autoApprovedIds];
+        let cursor = new Date(today.getTime() - (today.getTimezoneOffset() * 60000));
+        cursor.setDate(cursor.getDate() + 1); // start tomorrow
+        const allPuzzles = await fetchAllPuzzlesMapped();
+        const byId = new Map((allPuzzles as PuzzleRecord[]).map(p => [p.id, p]));
+
+        let safety = 0;
+        while (queue.length > 0 && safety < 365) {
+          const dateStr = cursor.toISOString().split('T')[0];
+          if (!scheduledDates.has(dateStr)) {
+            const puzzleId = queue.shift()!;
+            const puz = byId.get(puzzleId);
+            if (puz) {
+              await upsertScheduleEntry(dateStr, puzzleId);
+              await upsertPuzzleMapped({ ...puz, status: 'scheduled', scheduledFor: dateStr });
+              scheduledDates.add(dateStr);
+            }
+          }
+          cursor.setDate(cursor.getDate() + 1);
+          safety++;
+        }
+      } catch (e) {
+        console.error('Auto-scheduling failed:', e);
+      }
     }
 
     // Update batch status
