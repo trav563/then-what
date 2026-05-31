@@ -87,11 +87,16 @@ export interface ExistingPuzzle {
 }
 
 export async function fetchExistingPuzzles(supabase: SupabaseClient): Promise<ExistingPuzzle[]> {
-  // No status filter: a story is permanently off-limits once it has existed in
-  // ANY form (draft, ai_reviewed, approved, scheduled, published, retired, rejected).
+  // A story is permanently off-limits once it has reached ANY vetted status:
+  // ai_reviewed, approved, scheduled, published, retired, rejected.
+  // We EXCLUDE 'draft' on purpose: a batch saves its candidates as drafts BEFORE
+  // evaluating them, so including drafts would make every puzzle match its own
+  // just-saved row (and its batch siblings) and get wrongly rejected as a
+  // duplicate of itself. Intra-batch dupes are still caught in runGenerate.
   const { data, error } = await supabase
     .from('puzzles')
-    .select('id, title, theme, status, cards, correct_order, story_text, fun_fact, is_true_story, embedding');
+    .select('id, title, theme, status, cards, correct_order, story_text, fun_fact, is_true_story, embedding')
+    .neq('status', 'draft');
 
   if (error || !data) {
     console.error('Failed to fetch existing puzzles for dedup:', error);
