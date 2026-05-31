@@ -161,12 +161,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (!inFlight) {
         await backfillEmbeddings(supabase, existing);
-        // Only generate roughly what's needed to fill the gap (+buffer for
-        // rejections), capped at the configured batch size. Keeps the run well
-        // under the serverless time limit; daily re-runs cover any shortfall.
-        const genCount = Math.min(batchSize, emptyWindowDates().length + 5);
+        // Hard cap per run: generating + evaluating a big batch can't finish in
+        // the 60s serverless limit. A few per run is plenty — the daily cron
+        // accumulates and tops the runway back up over a few days.
+        const MAX_PER_RUN = 4;
+        const genCount = Math.min(batchSize, MAX_PER_RUN, emptyWindowDates().length + 2);
         const rawPuzzles = await runGenerate({ ...genSettings, count: genCount }, existing);
         generated = rawPuzzles.length;
+        // Trim the evaluator's existing-puzzle context (the embedding check is the
+        // real dedup; this LLM list is a secondary net) to keep each eval fast.
+        const existingForEval = existing.slice(0, 60);
 
         const now = Date.now();
         batchId = `cronbatch_${now}`;
@@ -229,7 +233,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const evaluation = await runEvaluate({
               title: c.title, theme: c.theme, cards: c.cards,
               correctOrder: c.correctOrder, isTrueStory: c.isTrueStory, funFact: c.funFact,
-            }, existing);
+            }, existingForEval);
             c.evaluation = evaluation;
 
             if (evaluation.duplicateOfExisting && evaluation.similarityFlag) {
