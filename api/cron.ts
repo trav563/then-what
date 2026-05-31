@@ -147,7 +147,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (!inFlight) {
         await backfillEmbeddings(supabase, existing);
-        const rawPuzzles = await runGenerate(genSettings, existing);
+        // Only generate roughly what's needed to fill the gap (+buffer for
+        // rejections), capped at the configured batch size. Keeps the run well
+        // under the serverless time limit; daily re-runs cover any shortfall.
+        const genCount = Math.min(batchSize, emptyWindowDates().length + 5);
+        const rawPuzzles = await runGenerate({ ...genSettings, count: genCount }, existing);
         generated = rawPuzzles.length;
 
         const now = Date.now();
