@@ -42,6 +42,8 @@ export interface PuzzleRecord {
   similarityWarning?: string;
   isAutoRecommended?: boolean;
   storyText?: string;
+  embedding?: number[];
+  isDuplicate?: boolean;
 }
 
 export interface GenerationSettings {

@@ -86,6 +86,16 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
     for (const puzzle of newPuzzles) {
       if (onProgress) onProgress(`Evaluating puzzle ${evaluatedCount + 1} of ${newPuzzles.length}...`);
       try {
+        // GATE 0: Pre-evaluation — reject duplicates of any past puzzle (semantic + lexical, server-detected)
+        if (puzzle.isDuplicate) {
+          puzzle.status = 'rejected';
+          puzzle.rejectedAt = Date.now();
+          if (!puzzle.similarityWarning) puzzle.similarityWarning = '🔁 REJECTED: Duplicate of an existing puzzle.';
+          await upsertPuzzleMapped(puzzle);
+          evaluatedCount++;
+          continue;
+        }
+
         // GATE 1: Pre-evaluation — reject any puzzle that isn't a true story
         if (!puzzle.isTrueStory) {
           puzzle.status = 'rejected';
