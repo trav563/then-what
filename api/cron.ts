@@ -147,7 +147,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Only a RECENTLY-started batch should block (something genuinely running).
       // A batch stuck in generating/evaluating from a prior run that crashed or
       // timed out must NOT block the safety net forever — treat it as stale.
-      const STALE_MS = 15 * 60 * 1000;
+      // Functions are capped at 60s, so any batch still "in flight" after 2 min
+      // is dead — don't let it block the safety net.
+      const STALE_MS = 2 * 60 * 1000;
       const nowMs = Date.now();
       const inFlight = (batchesRows || []).find((b: any) => {
         if (b.status !== 'generating' && b.status !== 'evaluating') return false;
@@ -204,8 +206,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
         for (const c of candidates) await supabase.from('puzzles').upsert(puzzleToDb(c));
 
-        const genApproved: string[] = [];
-        for (const c of candidates) {
+        // Evaluate one candidate through GATE 0/1/2 + publish-safe scheduling bar.
+        const evalOne = async (c: any) => {
           try {
             // GATE 0 — duplicate of a past or in-batch puzzle.
             if (c.isDuplicate) {
@@ -213,7 +215,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               c.rejectedAt = Date.now();
               if (!c.similarityWarning) c.similarityWarning = '🔁 REJECTED: Duplicate of an existing puzzle.';
               await supabase.from('puzzles').upsert(puzzleToDb(c));
-              continue;
+              return;
             }
             // GATE 1 — must be a verified true story.
             if (!c.isTrueStory) {
@@ -221,7 +223,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               c.rejectedAt = Date.now();
               c.similarityWarning = '❌ REJECTED: Not a verified true story. All puzzles must be Bizarre True Stories.';
               await supabase.from('puzzles').upsert(puzzleToDb(c));
-              continue;
+              return;
             }
 
             const evaluation = await runEvaluate({
@@ -272,15 +274,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (publishSafe) {
               c.status = 'approved';
               c.approvedAt = Date.now();
-              genApproved.push(c.id);
             }
 
             await supabase.from('puzzles').upsert(puzzleToDb(c));
           } catch (e) {
             console.error('Eval failed for', c.id, e);
           }
+        };
+
+        // Evaluate concurrently in small chunks — sequential evaluation of a full
+        // batch blows past the serverless time limit; chunking keeps us fast while
+        // staying within Gemini rate limits.
+        const CONCURRENCY = 5;
+        for (let i = 0; i < candidates.length; i += CONCURRENCY) {
+          await Promise.all(candidates.slice(i, i + CONCURRENCY).map(evalOne));
         }
 
+        const genApproved = candidates.filter((c) => c.status === 'approved').map((c) => c.id);
         rejected = candidates.filter((p) => p.status === 'rejected').length;
         autoScheduledFromGen = await fillSchedule(genApproved);
 
