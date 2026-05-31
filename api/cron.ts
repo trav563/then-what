@@ -135,6 +135,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let autoScheduledFromGen = 0;
     let rejected = 0;
     let batchId: string | null = null;
+    let blockedByInFlight = false;
 
     // ── Step B: still short on runway → generate, AI-review, schedule the safe ones. ──
     if (runwayDays() < minRunway && emptyWindowDates().length > 0) {
@@ -143,7 +144,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(5);
-      const inFlight = (batchesRows || []).find((b: any) => b.status === 'generating' || b.status === 'evaluating');
+      // Only a RECENTLY-started batch should block (something genuinely running).
+      // A batch stuck in generating/evaluating from a prior run that crashed or
+      // timed out must NOT block the safety net forever — treat it as stale.
+      const STALE_MS = 15 * 60 * 1000;
+      const nowMs = Date.now();
+      const inFlight = (batchesRows || []).find((b: any) => {
+        if (b.status !== 'generating' && b.status !== 'evaluating') return false;
+        const createdMs = typeof b.created_at === 'number' ? b.created_at : Date.parse(b.created_at);
+        if (!createdMs || isNaN(createdMs)) return false; // unknown age → don't block
+        return (nowMs - createdMs) < STALE_MS;
+      });
+      blockedByInFlight = !!inFlight;
 
       if (!inFlight) {
         await backfillEmbeddings(supabase, existing);
@@ -290,6 +302,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       autoScheduledFromGen,
       rejected,
       batchId,
+      blockedByInFlight,
     });
   } catch (error: any) {
     console.error('Cron failed:', error);
