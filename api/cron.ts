@@ -19,11 +19,25 @@ const DUP_COSINE = 0.84;
 const DUP_TITLE_JACCARD = 0.6;
 const DUP_FIRSTCARD_JACCARD = 0.5;
 
-// Daily autonomous generation. Mirrors the gates in src/services/automation.ts
-// so the cron, the browser automation, and manual Batches all behave identically:
+// ─── Backup auto-scheduler tuning ───
+// Trigger when fewer than MIN_RUNWAY upcoming days (starting today) have a puzzle
+// scheduled. When triggered, fill every empty day up to TARGET_RUNWAY ahead so we
+// don't fire again tomorrow. Both are overridable via automation_settings columns
+// (min_days_ahead / target_days_ahead) if you add them; otherwise these defaults.
+const DEFAULT_MIN_RUNWAY = 5;
+const DEFAULT_TARGET_RUNWAY = 14;
+
+function utcDateStr(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+// Daily autonomous backup. Guarantees the schedule never runs dry when you can't
+// review manually. Same gates as the manual/automation paths:
 //   GATE 0 — reject duplicates (semantic + lexical, tagged by runGenerate)
 //   GATE 1 — reject non-true-stories
 //   GATE 2 — reject duplicate/inaccurate/bad-trivia after evaluation
+// Only puzzles the evaluator marks "approve" (fact-checked, non-duplicate) are
+// auto-scheduled; everything else stays in ai_reviewed for you to review later.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const authHeader = req.headers.authorization;
   if (!CRON_SECRET || !authHeader || authHeader !== `Bearer ${CRON_SECRET}`) {
@@ -45,245 +59,232 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .eq('id', 'default')
       .single();
 
-    const settings = settingsRow
-      ? {
-          enabled: settingsRow.enabled,
-          threshold: settingsRow.threshold,
-          batchSize: settingsRow.batch_size,
-          themeMix: settingsRow.theme_mix || undefined,
-          instructionEmphasis: settingsRow.instruction_emphasis || undefined,
-          excludeThemes: settingsRow.exclude_themes || undefined,
-        }
-      : { enabled: false, threshold: 14, batchSize: 20 };
-
-    if (!settings.enabled) {
+    if (!settingsRow || !settingsRow.enabled) {
       return res.status(200).json({ skipped: 'automation disabled' });
     }
 
-    const { data: scheduleRows } = await supabase.from('schedule').select('*');
-    const scheduleMap: Record<string, string> = {};
-    (scheduleRows || []).forEach((r: any) => { scheduleMap[r.date] = r.puzzle_id; });
-    const scheduledIds = new Set(Object.values(scheduleMap));
+    const batchSize = settingsRow.batch_size ?? 20;
+    const minRunway = Number(settingsRow.min_days_ahead ?? DEFAULT_MIN_RUNWAY);
+    const targetRunway = Math.max(Number(settingsRow.target_days_ahead ?? DEFAULT_TARGET_RUNWAY), minRunway);
+    const genSettings = {
+      count: batchSize,
+      themeMix: settingsRow.theme_mix || undefined,
+      instructionEmphasis: settingsRow.instruction_emphasis || undefined,
+      excludeThemes: settingsRow.exclude_themes || undefined,
+    };
 
-    // Off-limits history (every status) + embeddings for the semantic check.
+    // Current schedule.
+    const { data: scheduleRows } = await supabase.from('schedule').select('*');
+    const scheduledDates = new Set<string>();
+    const scheduledIds = new Set<string>();
+    (scheduleRows || []).forEach((r: any) => { scheduledDates.add(r.date); scheduledIds.add(r.puzzle_id); });
+
+    // Full history (excludes drafts) — used for both the approved pool and dedup.
     const existing = await fetchExistingPuzzles(supabase);
 
-    const approvedUnscheduled = existing.filter(
-      (p) => p.status === 'approved' && !scheduledIds.has(p.id)
-    );
-    if (approvedUnscheduled.length >= settings.threshold) {
-      return res.status(200).json({
-        skipped: 'inventory healthy',
-        approvedUnscheduled: approvedUnscheduled.length,
-        threshold: settings.threshold,
-      });
-    }
+    const todayStr = utcDateStr(new Date());
 
-    const { data: batchesRows } = await supabase
-      .from('batches')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5);
-    const inFlight = (batchesRows || []).find(
-      (b: any) => b.status === 'generating' || b.status === 'evaluating'
-    );
-    if (inFlight) {
-      return res.status(200).json({ skipped: 'batch already in flight', batchId: inFlight.id });
-    }
-
-    await backfillEmbeddings(supabase, existing);
-
-    const rawPuzzles = await runGenerate(
-      {
-        count: settings.batchSize,
-        themeMix: settings.themeMix,
-        instructionEmphasis: settings.instructionEmphasis,
-        excludeThemes: settings.excludeThemes,
-      },
-      existing
-    );
-
-    const now = Date.now();
-    const batchId = `cronbatch_${now}`;
-
-    const candidates = rawPuzzles.map((raw: any, index: number) => {
-      const safeCards = (raw.cards || []).slice(0, 6).map((c: any) => String(c));
-      while (safeCards.length < 6) safeCards.push('...');
-      const cards = safeCards.map((text: string, i: number) => ({ id: `c${i}`, text }));
-      return {
-        id: `gen_${now}_${index}`,
-        title: raw.title,
-        theme: raw.theme,
-        cards,
-        correctOrder: cards.map((c: any) => c.id),
-        status: 'draft' as string,
-        source: 'ai_generation',
-        createdAt: now,
-        updatedAt: now,
-        isDuplicate: !!raw.is_duplicate,
-        similarityWarning: raw.similarity_warning || undefined,
-        storyText: raw.story_text || undefined,
-        isTrueStory: raw.is_true_story || false,
-        funFact: raw.fun_fact || undefined,
-        embedding: Array.isArray(raw.embedding) ? raw.embedding : undefined,
-        evaluation: undefined as any,
-        isAutoRecommended: false,
-        approvedAt: undefined as number | undefined,
-        scheduledFor: undefined as string | undefined,
-        rejectedAt: undefined as number | undefined,
-        generationBatchId: batchId,
-      };
-    });
-
-    await supabase.from('batches').upsert({
-      id: batchId,
-      created_at: now,
-      settings: {
-        count: settings.batchSize,
-        themeMix: settings.themeMix,
-        instructionEmphasis: settings.instructionEmphasis,
-        excludeThemes: settings.excludeThemes,
-      },
-      puzzle_ids: candidates.map((p) => p.id),
-      status: 'evaluating',
-      summary: null,
-    });
-
-    for (const c of candidates) {
-      await supabase.from('puzzles').upsert(puzzleToDb(c));
-    }
-
-    const autoApproved: typeof candidates = [];
-    for (const c of candidates) {
-      try {
-        // GATE 0 — duplicate of a past or in-batch puzzle.
-        if (c.isDuplicate) {
-          c.status = 'rejected';
-          c.rejectedAt = Date.now();
-          if (!c.similarityWarning) c.similarityWarning = '🔁 REJECTED: Duplicate of an existing puzzle.';
-          await supabase.from('puzzles').upsert(puzzleToDb(c));
-          continue;
-        }
-
-        // GATE 1 — must be a verified true story.
-        if (!c.isTrueStory) {
-          c.status = 'rejected';
-          c.rejectedAt = Date.now();
-          c.similarityWarning = '❌ REJECTED: Not a verified true story. All puzzles must be Bizarre True Stories.';
-          await supabase.from('puzzles').upsert(puzzleToDb(c));
-          continue;
-        }
-
-        const evaluation = await runEvaluate({
-          title: c.title,
-          theme: c.theme,
-          cards: c.cards,
-          correctOrder: c.correctOrder,
-          isTrueStory: c.isTrueStory,
-          funFact: c.funFact,
-        }, existing);
-        c.evaluation = evaluation;
-
-        if (evaluation.duplicateOfExisting && evaluation.similarityFlag) {
-          c.similarityWarning = `🔁 DUPLICATE: ${evaluation.similarityFlag}`;
-        }
-
-        const factAccuracy = evaluation.fact_accuracy ?? 10;
-        const triviaQuality = evaluation.true_story_trivia_quality ?? 10;
-
-        // GATE 2 — post-evaluation rejections.
-        if (evaluation.duplicateOfExisting) {
-          c.status = 'rejected';
-          c.rejectedAt = Date.now();
-        } else if (factAccuracy < 7) {
-          c.status = 'rejected';
-          c.rejectedAt = Date.now();
-          c.similarityWarning = `❌ FACT-CHECK FAILED: AI evaluator scored fact accuracy ${factAccuracy}/10. Story may not be true.`;
-        } else if (triviaQuality < 4) {
-          c.status = 'rejected';
-          c.rejectedAt = Date.now();
-          c.similarityWarning = `⚠️ BAD TRIVIA: Fun fact scored ${triviaQuality}/10 — generic trivia instead of event epilogue.`;
-        } else {
-          c.status = 'ai_reviewed';
-        }
-
-        const isAutoRecommended =
-          evaluation.clarity >= 9 &&
-          evaluation.endingStrength >= 8 &&
-          evaluation.anchorStrength >= 8 &&
-          evaluation.ambiguityRisk <= 2 &&
-          evaluation.novelty >= 6 &&
-          factAccuracy >= 8 &&
-          triviaQuality >= 6 &&
-          !c.similarityWarning &&
-          !evaluation.duplicateOfExisting;
-
-        c.isAutoRecommended = isAutoRecommended;
-
-        if (isAutoRecommended) {
-          c.status = 'approved';
-          c.approvedAt = Date.now();
-          autoApproved.push(c);
-        }
-
-        await supabase.from('puzzles').upsert(puzzleToDb(c));
-      } catch (e) {
-        console.error('Eval failed for', c.id, e);
+    // Consecutive days, starting today, that already have a puzzle scheduled.
+    const runwayDays = (): number => {
+      let n = 0;
+      const cur = new Date(todayStr + 'T00:00:00Z');
+      while (scheduledDates.has(utcDateStr(cur))) { n++; cur.setUTCDate(cur.getUTCDate() + 1); }
+      return n;
+    };
+    // Empty dates within [today .. today+targetRunway-1], earliest first.
+    const emptyWindowDates = (): string[] => {
+      const out: string[] = [];
+      const cur = new Date(todayStr + 'T00:00:00Z');
+      for (let i = 0; i < targetRunway; i++) {
+        const d = utcDateStr(cur);
+        if (!scheduledDates.has(d)) out.push(d);
+        cur.setUTCDate(cur.getUTCDate() + 1);
       }
+      return out;
+    };
+
+    const runwayBefore = runwayDays();
+    if (runwayBefore >= minRunway) {
+      return res.status(200).json({ skipped: 'runway healthy', runwayDays: runwayBefore, minRunway });
     }
 
-    // Auto-schedule approved puzzles onto the next free future dates.
-    let scheduledCount = 0;
-    if (autoApproved.length > 0) {
-      const scheduledDates = new Set(Object.keys(scheduleMap));
-      const cursor = new Date();
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-      const queue = [...autoApproved];
-      let safety = 0;
-      while (queue.length > 0 && safety < 365) {
-        const dateStr = cursor.toISOString().split('T')[0];
-        if (!scheduledDates.has(dateStr)) {
-          const puzzle = queue.shift();
-          if (puzzle) {
-            await supabase.from('schedule').upsert({ date: dateStr, puzzle_id: puzzle.id }, { onConflict: 'date' });
-            puzzle.status = 'scheduled';
-            puzzle.scheduledFor = dateStr;
-            await supabase.from('puzzles').upsert(puzzleToDb(puzzle));
-            scheduledDates.add(dateStr);
-            scheduledCount++;
+    // Assign a queue of puzzle ids onto the earliest empty days in the window.
+    const fillSchedule = async (ids: string[]): Promise<number> => {
+      let filled = 0;
+      for (const date of emptyWindowDates()) {
+        const pid = ids.shift();
+        if (!pid) break;
+        await supabase.from('schedule').upsert({ date, puzzle_id: pid }, { onConflict: 'date' });
+        await supabase.from('puzzles').update({
+          status: 'scheduled', scheduled_for: date, updated_at: new Date().toISOString(),
+        }).eq('id', pid);
+        scheduledDates.add(date);
+        scheduledIds.add(pid);
+        filled++;
+      }
+      return filled;
+    };
+
+    // ── Step A: use existing approved-but-unscheduled inventory first (no AI cost). ──
+    const approvedPool = existing
+      .filter((p) => p.status === 'approved' && !scheduledIds.has(p.id))
+      .map((p) => p.id);
+    const filledFromInventory = await fillSchedule(approvedPool);
+
+    let generated = 0;
+    let autoScheduledFromGen = 0;
+    let rejected = 0;
+    let batchId: string | null = null;
+
+    // ── Step B: still short on runway → generate, AI-review, schedule the safe ones. ──
+    if (runwayDays() < minRunway && emptyWindowDates().length > 0) {
+      const { data: batchesRows } = await supabase
+        .from('batches')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(5);
+      const inFlight = (batchesRows || []).find((b: any) => b.status === 'generating' || b.status === 'evaluating');
+
+      if (!inFlight) {
+        await backfillEmbeddings(supabase, existing);
+        const rawPuzzles = await runGenerate(genSettings, existing);
+        generated = rawPuzzles.length;
+
+        const now = Date.now();
+        batchId = `cronbatch_${now}`;
+
+        const candidates = rawPuzzles.map((raw: any, index: number) => {
+          const safeCards = (raw.cards || []).slice(0, 6).map((c: any) => String(c));
+          while (safeCards.length < 6) safeCards.push('...');
+          const cards = safeCards.map((text: string, i: number) => ({ id: `c${i}`, text }));
+          return {
+            id: `gen_${now}_${index}`,
+            title: raw.title,
+            theme: raw.theme,
+            cards,
+            correctOrder: cards.map((c: any) => c.id),
+            status: 'draft' as string,
+            source: 'ai_generation',
+            createdAt: now,
+            updatedAt: now,
+            isDuplicate: !!raw.is_duplicate,
+            similarityWarning: raw.similarity_warning || undefined,
+            storyText: raw.story_text || undefined,
+            isTrueStory: raw.is_true_story || false,
+            funFact: raw.fun_fact || undefined,
+            embedding: Array.isArray(raw.embedding) ? raw.embedding : undefined,
+            evaluation: undefined as any,
+            isAutoRecommended: false,
+            approvedAt: undefined as number | undefined,
+            scheduledFor: undefined as string | undefined,
+            rejectedAt: undefined as number | undefined,
+            generationBatchId: batchId,
+          };
+        });
+
+        await supabase.from('batches').upsert({
+          id: batchId, created_at: now, settings: genSettings,
+          puzzle_ids: candidates.map((p) => p.id), status: 'evaluating', summary: null,
+        });
+        for (const c of candidates) await supabase.from('puzzles').upsert(puzzleToDb(c));
+
+        const genApproved: string[] = [];
+        for (const c of candidates) {
+          try {
+            // GATE 0 — duplicate of a past or in-batch puzzle.
+            if (c.isDuplicate) {
+              c.status = 'rejected';
+              c.rejectedAt = Date.now();
+              if (!c.similarityWarning) c.similarityWarning = '🔁 REJECTED: Duplicate of an existing puzzle.';
+              await supabase.from('puzzles').upsert(puzzleToDb(c));
+              continue;
+            }
+            // GATE 1 — must be a verified true story.
+            if (!c.isTrueStory) {
+              c.status = 'rejected';
+              c.rejectedAt = Date.now();
+              c.similarityWarning = '❌ REJECTED: Not a verified true story. All puzzles must be Bizarre True Stories.';
+              await supabase.from('puzzles').upsert(puzzleToDb(c));
+              continue;
+            }
+
+            const evaluation = await runEvaluate({
+              title: c.title, theme: c.theme, cards: c.cards,
+              correctOrder: c.correctOrder, isTrueStory: c.isTrueStory, funFact: c.funFact,
+            }, existing);
+            c.evaluation = evaluation;
+
+            if (evaluation.duplicateOfExisting && evaluation.similarityFlag) {
+              c.similarityWarning = `🔁 DUPLICATE: ${evaluation.similarityFlag}`;
+            }
+
+            const factAccuracy = evaluation.fact_accuracy ?? 10;
+            const triviaQuality = evaluation.true_story_trivia_quality ?? 10;
+
+            // GATE 2 — post-evaluation rejections.
+            if (evaluation.duplicateOfExisting) {
+              c.status = 'rejected';
+              c.rejectedAt = Date.now();
+            } else if (factAccuracy < 7) {
+              c.status = 'rejected';
+              c.rejectedAt = Date.now();
+              c.similarityWarning = `❌ FACT-CHECK FAILED: AI evaluator scored fact accuracy ${factAccuracy}/10. Story may not be true.`;
+            } else if (triviaQuality < 4) {
+              c.status = 'rejected';
+              c.rejectedAt = Date.now();
+              c.similarityWarning = `⚠️ BAD TRIVIA: Fun fact scored ${triviaQuality}/10 — generic trivia instead of event epilogue.`;
+            } else {
+              c.status = 'ai_reviewed';
+            }
+
+            // Strict flag for the UI "strong candidate" badge.
+            c.isAutoRecommended =
+              evaluation.clarity >= 9 && evaluation.endingStrength >= 8 &&
+              evaluation.anchorStrength >= 8 && evaluation.ambiguityRisk <= 2 &&
+              evaluation.novelty >= 6 && factAccuracy >= 8 && triviaQuality >= 6 &&
+              !c.similarityWarning && !evaluation.duplicateOfExisting;
+
+            // Publish-safe bar for UNATTENDED scheduling: the evaluator approves it,
+            // it's fact-checked and not a duplicate. Looser than the strict badge so
+            // the schedule actually fills, but never publishes a rejected/dupe puzzle.
+            const publishSafe =
+              c.status === 'ai_reviewed' &&
+              evaluation.recommendedDecision === 'approve' &&
+              !evaluation.duplicateOfExisting &&
+              factAccuracy >= 7 && triviaQuality >= 4;
+
+            if (publishSafe) {
+              c.status = 'approved';
+              c.approvedAt = Date.now();
+              genApproved.push(c.id);
+            }
+
+            await supabase.from('puzzles').upsert(puzzleToDb(c));
+          } catch (e) {
+            console.error('Eval failed for', c.id, e);
           }
         }
-        cursor.setUTCDate(cursor.getUTCDate() + 1);
-        safety++;
+
+        rejected = candidates.filter((p) => p.status === 'rejected').length;
+        autoScheduledFromGen = await fillSchedule(genApproved);
+
+        await supabase.from('batches').upsert({
+          id: batchId, created_at: now, settings: genSettings,
+          puzzle_ids: candidates.map((p) => p.id), status: 'completed',
+          summary: { generated, autoScheduled: autoScheduledFromGen, rejected },
+        });
       }
     }
 
-    const rejectedCount = candidates.filter((p) => p.status === 'rejected').length;
-
-    await supabase.from('batches').upsert({
-      id: batchId,
-      created_at: now,
-      settings: {
-        count: settings.batchSize,
-        themeMix: settings.themeMix,
-        instructionEmphasis: settings.instructionEmphasis,
-        excludeThemes: settings.excludeThemes,
-      },
-      puzzle_ids: candidates.map((p) => p.id),
-      status: 'completed',
-      summary: {
-        generated: candidates.length,
-        autoApproved: autoApproved.length,
-        autoScheduled: scheduledCount,
-        rejected: rejectedCount,
-      },
-    });
-
     return res.status(200).json({
-      generated: candidates.length,
-      approved: autoApproved.length,
-      scheduled: scheduledCount,
-      rejected: rejectedCount,
+      runwayBefore,
+      runwayAfter: runwayDays(),
+      minRunway,
+      targetRunway,
+      filledFromInventory,
+      generated,
+      autoScheduledFromGen,
+      rejected,
       batchId,
     });
   } catch (error: any) {
