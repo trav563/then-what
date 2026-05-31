@@ -24,7 +24,7 @@ const DUP_FIRSTCARD_JACCARD = 0.5;
 // scheduled. When triggered, fill every empty day up to TARGET_RUNWAY ahead so we
 // don't fire again tomorrow. Both are overridable via automation_settings columns
 // (min_days_ahead / target_days_ahead) if you add them; otherwise these defaults.
-const DEFAULT_MIN_RUNWAY = 10; // TEMP: raised from 5 to demonstrate a live run (runway is 8). REVERT TO 5.
+const DEFAULT_MIN_RUNWAY = 5;
 const DEFAULT_TARGET_RUNWAY = 14;
 
 function utcDateStr(d: Date): string {
