@@ -14,5 +14,3 @@ ALTER TABLE puzzles
 -- Functional index to quickly find puzzles that still need backfilling.
 CREATE INDEX IF NOT EXISTS puzzles_embedding_null_idx
   ON puzzles ((embedding IS NULL));
-
-curl -H "Authorization: Bearer 5d1c3f73ae78ec1c89754a5aea6f463d63068a2223ce8e2240fe907efe6d4901" https://then-what.vercel.app/api/cron
