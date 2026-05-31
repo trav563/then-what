@@ -56,10 +56,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Backfill embeddings for any historical puzzle that lacks one, so the
       // semantic check sees the full library.
       await backfillEmbeddings(supabase, existing);
-      const result = await generatePuzzles(settings, existing);
+      const result = await runGenerate(settings, existing);
       return res.status(200).json(result);
     } else if (action === 'evaluate') {
-      const result = await evaluatePuzzle(puzzle, existing);
+      const result = await runEvaluate(puzzle, existing);
       return res.status(200).json(result);
     } else {
       return res.status(400).json({ error: 'Invalid action. Use "generate" or "evaluate".' });
@@ -72,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 // ─── Existing puzzles (full history) ───
 
-interface ExistingPuzzle {
+export interface ExistingPuzzle {
   id: string;
   title: string;
   theme: string;
@@ -86,7 +86,7 @@ interface ExistingPuzzle {
   embedding: number[] | null;
 }
 
-async function fetchExistingPuzzles(supabase: SupabaseClient): Promise<ExistingPuzzle[]> {
+export async function fetchExistingPuzzles(supabase: SupabaseClient): Promise<ExistingPuzzle[]> {
   // No status filter: a story is permanently off-limits once it has existed in
   // ANY form (draft, ai_reviewed, approved, scheduled, published, retired, rejected).
   const { data, error } = await supabase
@@ -168,7 +168,7 @@ function cosine(a: number[], b: number[]): number {
 
 // Embed any historical puzzle missing an embedding and persist it (one-time
 // cost per puzzle; cheap on every run thereafter). Mutates `existing` in place.
-async function backfillEmbeddings(supabase: SupabaseClient, existing: ExistingPuzzle[]): Promise<void> {
+export async function backfillEmbeddings(supabase: SupabaseClient, existing: ExistingPuzzle[]): Promise<void> {
   const missing = existing.filter(p => !p.embedding && buildEmbedText(p).length > 0);
   if (missing.length === 0) return;
 
@@ -286,7 +286,7 @@ If tempted to cover any of the same real-world events above, choose a completely
 `;
 }
 
-async function generatePuzzles(
+export async function runGenerate(
   settings: { count: number; themeMix?: string; instructionEmphasis?: string; excludeThemes?: string },
   existing: ExistingPuzzle[]
 ) {
@@ -420,7 +420,7 @@ For each puzzle, provide:
 
 // ─── Evaluate a Puzzle ───
 
-async function evaluatePuzzle(
+export async function runEvaluate(
   puzzle: { title: string; theme: string; cards: { id: string; text: string }[]; correctOrder: string[]; isTrueStory?: boolean; funFact?: string; },
   existing: ExistingPuzzle[]
 ) {
