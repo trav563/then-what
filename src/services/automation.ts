@@ -86,9 +86,42 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
     for (const puzzle of newPuzzles) {
       if (onProgress) onProgress(`Evaluating puzzle ${evaluatedCount + 1} of ${newPuzzles.length}...`);
       try {
+        // GATE 1: Pre-evaluation — reject any puzzle that isn't a true story
+        if (!puzzle.isTrueStory) {
+          puzzle.status = 'rejected';
+          puzzle.rejectedAt = Date.now();
+          puzzle.similarityWarning = '❌ REJECTED: Not a verified true story. All puzzles must be Bizarre True Stories.';
+          await upsertPuzzleMapped(puzzle);
+          evaluatedCount++;
+          continue;
+        }
+
         const evaluation = await evaluatePuzzle(puzzle);
         puzzle.evaluation = evaluation;
-        puzzle.status = 'ai_reviewed';
+        
+        // Check for duplicate detection from AI evaluator
+        if (evaluation.duplicateOfExisting && evaluation.similarityFlag) {
+          puzzle.similarityWarning = `🔁 DUPLICATE: ${evaluation.similarityFlag}`;
+        }
+        
+        // GATE 2: Post-evaluation — reject if duplicate, factually inaccurate, or bad trivia
+        const factAccuracy = (evaluation as any).fact_accuracy ?? 10;
+        const triviaQuality = (evaluation as any).true_story_trivia_quality ?? 10;
+        
+        if (evaluation.duplicateOfExisting) {
+          puzzle.status = 'rejected';
+          puzzle.rejectedAt = Date.now();
+        } else if (factAccuracy < 7) {
+          puzzle.status = 'rejected';
+          puzzle.rejectedAt = Date.now();
+          puzzle.similarityWarning = `❌ FACT-CHECK FAILED: AI evaluator scored fact accuracy ${factAccuracy}/10. Story may not be true.`;
+        } else if (triviaQuality < 4) {
+          puzzle.status = 'rejected';
+          puzzle.rejectedAt = Date.now();
+          puzzle.similarityWarning = `⚠️ BAD TRIVIA: Fun fact scored ${triviaQuality}/10 — generic trivia instead of event epilogue.`;
+        } else {
+          puzzle.status = 'ai_reviewed';
+        }
         
         // Auto-recommendation logic
         const isAutoRecommended = 
@@ -97,7 +130,10 @@ export async function checkAndRunAutomation(onProgress?: (msg: string) => void, 
           evaluation.anchorStrength >= 8 &&
           evaluation.ambiguityRisk <= 2 &&
           evaluation.novelty >= 6 &&
-          !puzzle.similarityWarning;
+          factAccuracy >= 8 &&
+          triviaQuality >= 6 &&
+          !puzzle.similarityWarning &&
+          !evaluation.duplicateOfExisting;
           
         puzzle.isAutoRecommended = isAutoRecommended;
         

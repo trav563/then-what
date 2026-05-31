@@ -62,9 +62,42 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
       for (const puzzle of newPuzzles) {
         setProgress(`Evaluating puzzle ${evaluatedCount + 1} of ${newPuzzles.length}...`);
         try {
+          // GATE 1: Pre-evaluation — reject any puzzle that isn't a true story
+          if (!puzzle.isTrueStory) {
+            puzzle.status = 'rejected';
+            puzzle.rejectedAt = Date.now();
+            puzzle.similarityWarning = '❌ REJECTED: Not a verified true story. All puzzles must be Bizarre True Stories.';
+            await upsertPuzzleMapped(puzzle);
+            evaluatedCount++;
+            continue;
+          }
+
           const evaluation = await evaluatePuzzle(puzzle);
           puzzle.evaluation = evaluation;
-          puzzle.status = 'ai_reviewed';
+          
+          // Check for duplicate detection from AI evaluator
+          if (evaluation.duplicateOfExisting && evaluation.similarityFlag) {
+            puzzle.similarityWarning = `🔁 DUPLICATE: ${evaluation.similarityFlag}`;
+          }
+          
+          // GATE 2: Post-evaluation — reject if duplicate, factually inaccurate, or bad trivia
+          const factAccuracy = (evaluation as any).fact_accuracy ?? 10;
+          const triviaQuality = (evaluation as any).true_story_trivia_quality ?? 10;
+          
+          if (evaluation.duplicateOfExisting) {
+            puzzle.status = 'rejected';
+            puzzle.rejectedAt = Date.now();
+          } else if (factAccuracy < 7) {
+            puzzle.status = 'rejected';
+            puzzle.rejectedAt = Date.now();
+            puzzle.similarityWarning = `❌ FACT-CHECK FAILED: AI evaluator scored fact accuracy ${factAccuracy}/10. Story may not be true.`;
+          } else if (triviaQuality < 4) {
+            puzzle.status = 'rejected';
+            puzzle.rejectedAt = Date.now();
+            puzzle.similarityWarning = `⚠️ BAD TRIVIA: Fun fact scored ${triviaQuality}/10 — generic trivia instead of event epilogue.`;
+          } else {
+            puzzle.status = 'ai_reviewed';
+          }
           await upsertPuzzleMapped(puzzle);
         } catch (e) {
           console.error("Failed to evaluate puzzle", puzzle.id, e);
@@ -133,6 +166,7 @@ export function BatchesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string)
                 className="w-full text-sm p-2 rounded-lg border border-slate-200 bg-white"
                 disabled={isGenerating}
               >
+                <option value={1}>1 Puzzle</option>
                 <option value={10}>10 Puzzles</option>
                 <option value={20}>20 Puzzles</option>
                 <option value={30}>30 Puzzles</option>
@@ -490,17 +524,20 @@ function BatchDetail({ batch, onPreviewPuzzle }: { batch: GenerationBatch, onPre
                   onChange={(e) => handleFactChange(puzzle.id, 'isTrueStory', e.target.checked)}
                   className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                 />
-                <label htmlFor={`true-${puzzle.id}`} className="font-bold text-slate-700 text-xs cursor-pointer select-none">Bizarre True Story</label>
-                {puzzle.isTrueStory && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ml-auto">True Story</span>}
-                {!puzzle.isTrueStory && puzzle.funFact && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ml-auto">Fiction + Fact</span>}
+                <label htmlFor={`true-${puzzle.id}`} className="font-bold text-slate-700 text-xs cursor-pointer select-none">Verified True Story</label>
+                {puzzle.isTrueStory ? (
+                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ml-auto">True Story</span>
+                ) : (
+                  <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ml-auto">Unverified</span>
+                )}
               </div>
               
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-500">Fun Fact / Trivia (Shown on completion)</label>
+                <label className="text-xs font-bold text-slate-500">Fun Fact / Epilogue (Shown on completion)</label>
                 <textarea
                   value={puzzle.funFact || ''}
                   onChange={(e) => handleFactChange(puzzle.id, 'funFact', e.target.value)}
-                  placeholder="Enter a true fact..."
+                  placeholder="Enter a true epilogue or historical context about the event..."
                   className="w-full text-sm border border-slate-200 rounded-lg p-2.5 min-h-[60px] focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 />
               </div>

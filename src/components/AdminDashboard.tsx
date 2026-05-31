@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { fetchAllPuzzlesMapped, upsertPuzzleMapped, fetchSchedule, upsertScheduleEntry, deleteScheduleEntry, supabase } from '../services/supabase';
 import { checkAndRunAutomation } from '../services/automation';
 import { PuzzleRecord, PuzzleStatus } from '../types';
-import { X, Calendar, BarChart3, Database, Check, Edit2, Trash2, Play, Plus, Settings, AlertTriangle, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Calendar, BarChart3, Database, Check, Edit2, Trash2, Play, Plus, Settings, AlertTriangle, AlertCircle, Loader2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { BatchesView } from './BatchesView';
 import { AutomationView } from './AutomationView';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { humanizeTheme } from '../utils';
 
 interface AdminDashboardProps {
@@ -71,6 +72,11 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
   const [scheduleDate, setScheduleDate] = useState('');
   const [schedulingPuzzleId, setSchedulingPuzzleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [scheduledSortAsc, setScheduledSortAsc] = useState(true);
+
+  // Compute today's date for LIVE badge
+  const todayNow = new Date();
+  const todayStr = new Date(todayNow.getTime() - (todayNow.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 
   const loadPuzzles = async () => {
     const data = await fetchAllPuzzlesMapped();
@@ -127,7 +133,83 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
     setScheduleDate('');
   };
 
-  const filteredPuzzles = puzzles.filter(p => statusFilter === 'all' || p.status === statusFilter);
+  const handleRemoveAndShift = async (targetDateStr: string, puzzleId: string) => {
+    if (!window.confirm("Are you sure you want to remove this puzzle and pull all later scheduled puzzles forward by 1 day?")) return;
+    
+    // 1. Un-schedule target
+    const puzzle = puzzles.find(p => p.id === puzzleId);
+    if (!puzzle) return;
+    
+    await deleteScheduleEntry(targetDateStr);
+    await upsertPuzzleMapped({ ...puzzle, status: 'approved', scheduledFor: undefined });
+    
+    // 2. Identify all later scheduled puzzles
+    const allPuzzles = [...puzzles].filter(p => p.status === 'scheduled' && p.scheduledFor && p.scheduledFor > targetDateStr);
+    allPuzzles.sort((a, b) => a.scheduledFor!.localeCompare(b.scheduledFor!));
+    
+    // 3. Shift them all backward by 1 day
+    for (const p of allPuzzles) {
+      const currentDate = new Date(p.scheduledFor!);
+      currentDate.setDate(currentDate.getDate() - 1);
+      const newDateStr = currentDate.toISOString().split('T')[0];
+      
+      // Delete old schedule entry, insert new one, update puzzle
+      await deleteScheduleEntry(p.scheduledFor!);
+      await upsertScheduleEntry(newDateStr, p.id);
+      await upsertPuzzleMapped({ ...p, scheduledFor: newDateStr });
+    }
+    
+    await loadPuzzles();
+  };
+
+  const handleMoveScheduled = async (dateStr: string, puzzleId: string, direction: 'up' | 'down') => {
+    const scheduledOnly = [...puzzles].filter(p => p.status === 'scheduled' && p.scheduledFor);
+    scheduledOnly.sort((a, b) => a.scheduledFor!.localeCompare(b.scheduledFor!));
+    
+    const currentIndex = scheduledOnly.findIndex(p => p.id === puzzleId);
+    if (currentIndex === -1) return;
+    
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= scheduledOnly.length) return; // Cannot move
+    
+    const currPuzzle = scheduledOnly[currentIndex];
+    const targetPuzzle = scheduledOnly[targetIndex];
+    
+    const currDate = currPuzzle.scheduledFor!;
+    const targetDate = targetPuzzle.scheduledFor!;
+    
+    // Swap them in DB
+    // First delete both from schedule to avoid PK conflicts
+    await deleteScheduleEntry(currDate);
+    await deleteScheduleEntry(targetDate);
+    
+    // Insert with swapped dates
+    await upsertScheduleEntry(currDate, targetPuzzle.id);
+    await upsertScheduleEntry(targetDate, currPuzzle.id);
+    
+    // Update puzzles
+    await upsertPuzzleMapped({ ...currPuzzle, scheduledFor: targetDate });
+    await upsertPuzzleMapped({ ...targetPuzzle, scheduledFor: currDate });
+    
+    await loadPuzzles();
+  };
+
+  const filteredPuzzles = useMemo(() => {
+    let result = puzzles.filter(p => statusFilter === 'all' || p.status === statusFilter);
+    
+    // Sort by scheduled date when filter is 'scheduled'
+    if (statusFilter === 'scheduled') {
+      result = [...result].sort((a, b) => {
+        const dateA = a.scheduledFor || '';
+        const dateB = b.scheduledFor || '';
+        return scheduledSortAsc
+          ? dateA.localeCompare(dateB)
+          : dateB.localeCompare(dateA);
+      });
+    }
+    
+    return result;
+  }, [puzzles, statusFilter, scheduledSortAsc]);
 
   const handleBulkReject = async () => {
     if (!window.confirm(`Are you sure you want to reject all ${filteredPuzzles.length} currently visible puzzles?`)) return;
@@ -196,6 +278,16 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
             <StatusFilter active={statusFilter === 'ai_reviewed'} onClick={() => setStatusFilter('ai_reviewed')} label="AI Reviewed" count={inventoryStats.aiReviewed} />
             <StatusFilter active={statusFilter === 'approved'} onClick={() => setStatusFilter('approved')} label="Approved" count={inventoryStats.approved} />
             <StatusFilter active={statusFilter === 'scheduled'} onClick={() => setStatusFilter('scheduled')} label="Scheduled" count={inventoryStats.scheduled} />
+            {statusFilter === 'scheduled' && (
+              <button
+                onClick={() => setScheduledSortAsc(prev => !prev)}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                title={scheduledSortAsc ? 'Sorted: Upcoming first' : 'Sorted: Latest first'}
+              >
+                <ArrowUpDown className="w-3 h-3" />
+                {scheduledSortAsc ? 'Upcoming First' : 'Latest First'}
+              </button>
+            )}
             <StatusFilter active={statusFilter === 'published'} onClick={() => setStatusFilter('published')} label="Published" count={inventoryStats.published} />
             <StatusFilter active={statusFilter === 'retired'} onClick={() => setStatusFilter('retired')} label="Retired" count={puzzles.filter(p => p.status === 'retired').length} />
             <StatusFilter active={statusFilter === 'rejected'} onClick={() => setStatusFilter('rejected')} label="Rejected" count={puzzles.filter(p => p.status === 'rejected').length} />
@@ -238,21 +330,41 @@ function PuzzlesView({ onPreviewPuzzle }: { onPreviewPuzzle: (id: string) => voi
               <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getStatusColor(puzzle.status)}`}>
-                      {puzzle.status}
-                    </span>
+                    {/* LIVE badge for today's scheduled puzzle */}
+                    {puzzle.status === 'scheduled' && puzzle.scheduledFor === todayStr ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500 text-white animate-pulse">
+                        ● LIVE
+                      </span>
+                    ) : (
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${getStatusColor(puzzle.status)}`}>
+                        {puzzle.status}
+                      </span>
+                    )}
                     {puzzle.scheduledFor && (
                       <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
                         {puzzle.scheduledFor}
                       </span>
                     )}
+                    {statusFilter === 'scheduled' && puzzle.scheduledFor && (
+                      <div className="flex items-center gap-0.5 ml-2 border border-slate-200 rounded-lg p-0.5 bg-white shadow-sm">
+                        <button onClick={() => handleMoveScheduled(puzzle.scheduledFor!, puzzle.id, 'up')} className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Move Up (Earlier)">
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleMoveScheduled(puzzle.scheduledFor!, puzzle.id, 'down')} className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Move Down (Later)">
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                        <div className="w-px h-3 bg-slate-200 mx-0.5" />
+                        <button onClick={() => handleRemoveAndShift(puzzle.scheduledFor!, puzzle.id)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Remove & Shift Schedule">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <h3 className="font-bold text-slate-800">{puzzle.title}</h3>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-sm text-slate-500">{humanizeTheme(puzzle.theme)}</p>
-                    {puzzle.isTrueStory && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">True Story</span>}
-                    {!puzzle.isTrueStory && puzzle.funFact && <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Fiction + Fact</span>}
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">True Story</span>
                   </div>
                 </div>
                 
@@ -743,7 +855,9 @@ function AnalyticsView() {
   const avgAttempts = solves > 0 ? totalAttemptsOnSolves / solves : 0;
 
   // Attempt distribution
-  const goldSolves = filteredEvents.filter(e => e.event_type === 'gold_solve').length;
+  // Gold solves: derive from puzzle_solved events with attempts === 1
+  // (more reliable than the gold_solve event which was added later)
+  const goldSolves = solveEvents.filter(e => e.data?.attempts === 1).length;
   const goldSolveRate = solves > 0 ? (goldSolves / solves) * 100 : 0;
   const attemptDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, failed: fails };
   solveEvents.forEach(e => {
@@ -766,6 +880,21 @@ function AnalyticsView() {
       .map(s => ({ ...s, users: s.sessions.size }))
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [filteredEvents]);
+
+  const chronologicalDailyStats = useMemo(() => {
+    return [...dailyStats].reverse();
+  }, [dailyStats]);
+
+  const attemptChartData = useMemo(() => {
+    return [
+      { name: '1', count: attemptDist[1], fill: '#10b981' },
+      { name: '2', count: attemptDist[2], fill: '#10b981' }, 
+      { name: '3', count: attemptDist[3], fill: '#10b981' },
+      { name: '4', count: attemptDist[4], fill: '#10b981' },
+      { name: '5', count: attemptDist[5], fill: '#10b981' },
+      { name: 'Fail', count: attemptDist.failed, fill: '#ef4444' }
+    ];
+  }, [attemptDist]);
 
   // Puzzle performance
   const puzzleStats = useMemo(() => {
@@ -827,77 +956,109 @@ function AnalyticsView() {
         <KPICard label="Fail Rate" value={`${failRate.toFixed(1)}%`} subtitle="Of completed runs" color="text-red-600" />
       </div>
 
-      {/* Engagement Funnel */}
-      <div>
-        <h2 className="text-base font-bold text-slate-800 mb-3">Engagement Funnel</h2>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
-          <FunnelBar label="Loaded" value={loads} max={loads} color="bg-slate-400" />
-          <FunnelBar label="Started" value={starts} max={loads} color="bg-indigo-500" />
-          <FunnelBar label="Solved" value={solves} max={loads} color="bg-emerald-500" />
-          <FunnelBar label="Failed" value={fails} max={loads} color="bg-red-500" />
+      {/* Visual Analytics Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Main DAU Chart */}
+        <div className="lg:col-span-2 space-y-3">
+          <h2 className="text-base font-bold text-slate-800">Daily Active Users & Engagement</h2>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-72">
+            {chronologicalDailyStats.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chronologicalDailyStats} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorSolves" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} minTickGap={20} />
+                  <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                  <RechartsTooltip 
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    itemStyle={{ fontWeight: 'bold' }}
+                  />
+                  <Area type="monotone" dataKey="users" name="Total Users" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
+                  <Area type="monotone" dataKey="solves" name="Solves" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorSolves)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400">No activity data yet</div>
+            )}
+          </div>
+        </div>
+
+        {/* Attempt Distribution Bar Chart */}
+        <div className="lg:col-span-1 space-y-3">
+          <h2 className="text-base font-bold text-slate-800">Attempt Distribution</h2>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={attemptChartData} margin={{ top: 10, right: 10, left: -30, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <RechartsTooltip 
+                  cursor={{ fill: '#f1f5f9' }}
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  itemStyle={{ fontWeight: 'bold', color: '#334155' }}
+                />
+                <Bar dataKey="count" name="Puzzles" radius={[4, 4, 0, 0]}>
+                  {attemptChartData.map((entry, index) => (
+                     <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Attempt Distribution */}
-        <div className="lg:col-span-1">
-          <h2 className="text-base font-bold text-slate-800 mb-3">Attempt Distribution</h2>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-            {[1, 2, 3, 4, 5].map(n => (
-              <div key={n}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="font-bold text-emerald-700">Attempt {n}</span>
-                  <span className="font-bold text-slate-700">{attemptDist[n as 1|2|3|4|5]}</span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2">
-                  <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${completedRuns > 0 ? (attemptDist[n as 1|2|3|4|5] / completedRuns) * 100 : 0}%`, opacity: 1 - (n - 1) * 0.15 }} />
-                </div>
-              </div>
-            ))}
-            <div className="pt-2 border-t border-slate-100">
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-bold text-red-600">Failed</span>
-                <span className="font-bold text-slate-700">{attemptDist.failed}</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-red-500 h-2 rounded-full" style={{ width: `${completedRuns > 0 ? (attemptDist.failed / completedRuns) * 100 : 0}%` }} />
-              </div>
-            </div>
+      {/* Engagement Tracking (Split Row) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h2 className="text-base font-bold text-slate-800 mb-3">Engagement Funnel</h2>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2 h-[200px]">
+            <FunnelBar label="Loaded" value={loads} max={loads} color="bg-slate-400" />
+            <FunnelBar label="Started" value={starts} max={loads} color="bg-indigo-500" />
+            <FunnelBar label="Solved" value={solves} max={loads} color="bg-emerald-500" />
+            <FunnelBar label="Failed" value={fails} max={loads} color="bg-red-500" />
           </div>
         </div>
-
-        {/* Daily Activity */}
-        <div className="lg:col-span-2">
-          <h2 className="text-base font-bold text-slate-800 mb-3">Daily Activity</h2>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500 font-medium">
-                <tr>
-                  <th className="p-3 border-b border-slate-200">Date</th>
-                  <th className="p-3 border-b border-slate-200 text-right">Users</th>
-                  <th className="p-3 border-b border-slate-200 text-right">Starts</th>
-                  <th className="p-3 border-b border-slate-200 text-right">Solves</th>
-                  <th className="p-3 border-b border-slate-200 text-right">Fails</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {dailyStats.slice(0, 14).map(stat => (
-                  <tr key={stat.date} className="hover:bg-slate-50">
-                    <td className="p-3 font-medium text-slate-800">{stat.date}</td>
-                    <td className="p-3 text-right text-indigo-600 font-medium">{stat.users}</td>
-                    <td className="p-3 text-right text-slate-600">{stat.starts}</td>
-                    <td className="p-3 text-right text-emerald-600 font-medium">{stat.solves}</td>
-                    <td className="p-3 text-right text-red-600 font-medium">{stat.fails}</td>
-                  </tr>
-                ))}
-                {dailyStats.length === 0 && (
+        
+        <div>
+           <h2 className="text-base font-bold text-slate-800 mb-3">Recent Activity Digest</h2>
+           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden h-[200px] overflow-y-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0">
                   <tr>
-                    <td colSpan={5} className="p-6 text-center text-slate-500">No activity data yet. Play a puzzle to generate events!</td>
+                    <th className="p-3 border-b border-slate-200">Date</th>
+                    <th className="p-3 border-b border-slate-200 text-right">Users</th>
+                    <th className="p-3 border-b border-slate-200 text-right">Starts</th>
+                    <th className="p-3 border-b border-slate-200 text-right">Solves</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {dailyStats.slice(0, 14).map(stat => (
+                    <tr key={stat.date} className="hover:bg-slate-50">
+                      <td className="p-3 font-medium text-slate-800">{stat.date}</td>
+                      <td className="p-3 text-right text-indigo-600 font-medium">{stat.users}</td>
+                      <td className="p-3 text-right text-slate-600">{stat.starts}</td>
+                      <td className="p-3 text-right text-emerald-600 font-medium">{stat.solves}</td>
+                    </tr>
+                  ))}
+                  {dailyStats.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="p-6 text-center text-slate-500">No data</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+           </div>
         </div>
       </div>
 

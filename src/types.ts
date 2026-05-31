@@ -14,6 +14,8 @@ export interface PuzzleEvaluation {
   likelyDifficulty: 'easy' | 'medium' | 'hard';
   recommendedDecision: 'approve' | 'revise' | 'reject';
   shortReason: string;
+  duplicateOfExisting?: boolean;
+  similarityFlag?: string;
 }
 
 export interface PuzzleRecord {
